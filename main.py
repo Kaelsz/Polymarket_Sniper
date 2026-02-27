@@ -47,7 +47,9 @@ def _setup_logging() -> None:
 
     formatter = logging.Formatter(_LOG_FMT, datefmt=_LOG_DATEFMT)
 
-    console = logging.StreamHandler(sys.stdout)
+    console = logging.StreamHandler(
+        open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+    )
     console.setFormatter(formatter)
     root.addHandler(console)
 

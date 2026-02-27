@@ -42,13 +42,21 @@ class PolymarketClient:
                     chain_id=137,  # Polygon mainnet
                 ),
             )
-            api_creds = await loop.run_in_executor(
-                None, self._client.derive_api_key
-            )
-            await loop.run_in_executor(
-                None, self._client.set_api_creds, api_creds
-            )
-            log.info("Polymarket CLOB client initialized on Polygon (chain 137)")
+            try:
+                api_creds = await loop.run_in_executor(
+                    None, self._client.derive_api_key
+                )
+                await loop.run_in_executor(
+                    None, self._client.set_api_creds, api_creds
+                )
+                log.info("Polymarket CLOB client initialized on Polygon (chain 137)")
+            except Exception as exc:
+                if settings.trading.dry_run:
+                    log.warning(
+                        "API key derivation failed (dry-run mode, non-fatal): %s", exc
+                    )
+                else:
+                    raise
 
     @property
     def client(self) -> ClobClient:

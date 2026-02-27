@@ -102,12 +102,12 @@ class CircuitBreaker:
 
         if health.state == AdapterState.OPEN:
             health.state = AdapterState.HALF_OPEN
-            log.info("CB  %s: OPEN → HALF_OPEN (received data)", adapter_name)
+            log.info("CB  %s: OPEN -> HALF_OPEN (received data)", adapter_name)
 
         if health.state == AdapterState.HALF_OPEN:
             health.consecutive_failures = 0
             health.state = AdapterState.CLOSED
-            log.info("CB  %s: HALF_OPEN → CLOSED (recovered)", adapter_name)
+            log.info("CB  %s: HALF_OPEN -> CLOSED (recovered)", adapter_name)
             self._evaluate_global_state()
 
     def record_failure(self, adapter_name: str, error: str = "") -> None:
@@ -132,7 +132,7 @@ class CircuitBreaker:
         ):
             health.state = AdapterState.OPEN
             log.error(
-                "CB  %s: CLOSED → OPEN (threshold %d reached)",
+                "CB  %s: CLOSED -> OPEN (threshold %d reached)",
                 adapter_name, self._cfg.failure_threshold,
             )
             self._evaluate_global_state()
@@ -146,7 +146,7 @@ class CircuitBreaker:
         if health.state == AdapterState.OPEN:
             health.state = AdapterState.HALF_OPEN
             health.last_success = time.time()
-            log.info("CB  %s: OPEN → HALF_OPEN (reconnected)", adapter_name)
+            log.info("CB  %s: OPEN -> HALF_OPEN (reconnected)", adapter_name)
 
     def check_stale(self) -> list[str]:
         """Check for adapters that haven't sent data recently."""
@@ -159,7 +159,7 @@ class CircuitBreaker:
                     stale.append(name)
                     health.state = AdapterState.OPEN
                     log.warning(
-                        "CB  %s: CLOSED → OPEN (stale: no data for %.0fs)",
+                        "CB  %s: CLOSED -> OPEN (stale: no data for %.0fs)",
                         name, elapsed,
                     )
         if stale:
