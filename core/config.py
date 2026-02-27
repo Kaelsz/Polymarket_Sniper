@@ -31,6 +31,13 @@ class PolymarketConfig:
             "POLYMARKET_HOST", "https://clob.polymarket.com"
         )
     )
+    api_key: str = field(default_factory=lambda: os.getenv("POLY_API_KEY", ""))
+    api_secret: str = field(default_factory=lambda: os.getenv("POLY_API_SECRET", ""))
+    api_passphrase: str = field(default_factory=lambda: os.getenv("POLY_API_PASSPHRASE", ""))
+
+    @property
+    def has_api_creds(self) -> bool:
+        return bool(self.api_key and self.api_secret and self.api_passphrase)
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import OrderArgs, OrderType
+from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
 
 from core.config import settings
 from core.rate_limiter import RateLimiter
@@ -44,8 +44,27 @@ class PolymarketClient:
                 ),
             )
             self._api_ready = False
-            last_exc: Exception | None = None
 
+            # -- Method 1: Manual API credentials (recommended for bots) --
+            if cfg.has_api_creds:
+                try:
+                    creds = ApiCreds(
+                        api_key=cfg.api_key,
+                        api_secret=cfg.api_secret,
+                        api_passphrase=cfg.api_passphrase,
+                    )
+                    await loop.run_in_executor(
+                        None, self._client.set_api_creds, creds
+                    )
+                    self._api_ready = True
+                    log.info(
+                        "Polymarket CLOB client initialized with manual API credentials (chain 137)"
+                    )
+                    return
+                except Exception as exc:
+                    log.error("Failed to set manual API credentials: %s", exc)
+
+            # -- Method 2: Auto-derive API key from private key --
             for attempt in range(1, max_retries + 1):
                 try:
                     api_creds = await loop.run_in_executor(
@@ -55,10 +74,9 @@ class PolymarketClient:
                         None, self._client.set_api_creds, api_creds
                     )
                     self._api_ready = True
-                    log.info("Polymarket CLOB client initialized on Polygon (chain 137)")
+                    log.info("Polymarket CLOB client initialized via derive_api_key (chain 137)")
                     return
                 except Exception as exc:
-                    last_exc = exc
                     log.warning(
                         "API key derivation attempt %d/%d failed: %s",
                         attempt, max_retries, exc,
@@ -74,11 +92,9 @@ class PolymarketClient:
                 )
             else:
                 log.error(
-                    "API key derivation failed after %d attempts. "
-                    "Check that your wallet (POLYMARKET_ADDRESS) has signed up on polymarket.com "
-                    "and that POLY_PRIVATE_KEY is correct. "
-                    "The bot will start but CANNOT place orders until the API key is derived.",
-                    max_retries,
+                    "API auth failed. Set POLY_API_KEY, POLY_API_SECRET, POLY_API_PASSPHRASE "
+                    "in .env (get them from polymarket.com Settings > API Keys). "
+                    "The bot will start but CANNOT place orders.",
                 )
 
     @property
