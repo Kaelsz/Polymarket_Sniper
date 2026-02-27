@@ -102,6 +102,12 @@ class TradingConfig:
     kelly_win_prob: float = field(
         default_factory=lambda: float(os.getenv("KELLY_WIN_PROB", "0.90"))
     )
+    api_rate_limit: float = field(
+        default_factory=lambda: float(os.getenv("API_RATE_LIMIT", "5.0"))
+    )
+    api_rate_burst: int = field(
+        default_factory=lambda: int(os.getenv("API_RATE_BURST", "10"))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +200,12 @@ def validate_config(s: Settings) -> list[str]:
         errors.append(f"KELLY_FRACTION must be in (0, 1.0]: got {t.kelly_fraction}")
     if not (0.0 < t.kelly_win_prob < 1.0):
         errors.append(f"KELLY_WIN_PROB must be in (0, 1.0): got {t.kelly_win_prob}")
+
+    # -- Rate limiting --
+    if t.api_rate_limit <= 0:
+        errors.append(f"API_RATE_LIMIT must be > 0: got {t.api_rate_limit}")
+    if t.api_rate_burst < 1:
+        errors.append(f"API_RATE_BURST must be >= 1: got {t.api_rate_burst}")
 
     return errors
 

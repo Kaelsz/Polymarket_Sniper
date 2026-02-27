@@ -8,6 +8,7 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import OrderArgs, OrderType
 
 from core.config import settings
+from core.rate_limiter import RateLimiter
 
 log = logging.getLogger("polysniper.polymarket")
 
@@ -18,6 +19,14 @@ class PolymarketClient:
     def __init__(self) -> None:
         self._client: ClobClient | None = None
         self._lock = asyncio.Lock()
+        self._limiter: RateLimiter | None = None
+
+    def set_rate_limiter(self, limiter: RateLimiter) -> None:
+        self._limiter = limiter
+
+    async def _throttle(self) -> None:
+        if self._limiter:
+            await self._limiter.acquire()
 
     async def init(self) -> None:
         async with self._lock:
@@ -48,6 +57,7 @@ class PolymarketClient:
         return self._client
 
     async def get_markets(self, **filters: Any) -> list[dict]:
+        await self._throttle()
         loop = asyncio.get_running_loop()
         resp = await loop.run_in_executor(
             None, lambda: self.client.get_markets(**filters)
@@ -55,6 +65,7 @@ class PolymarketClient:
         return resp
 
     async def get_order_book(self, token_id: str) -> dict:
+        await self._throttle()
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self.client.get_order_book(token_id)
@@ -66,6 +77,7 @@ class PolymarketClient:
             log.warning("[DRY RUN] Would buy token %s for $%.2f", token_id, amount)
             return None
 
+        await self._throttle()
         loop = asyncio.get_running_loop()
         order_args = OrderArgs(
             token_id=token_id,
@@ -86,6 +98,7 @@ class PolymarketClient:
             log.warning("[DRY RUN] Would sell %.2f shares of %s", shares, token_id)
             return None
 
+        await self._throttle()
         loop = asyncio.get_running_loop()
         order_args = OrderArgs(
             token_id=token_id,
@@ -116,6 +129,7 @@ class PolymarketClient:
         market has not yet resolved.
         """
         try:
+            await self._throttle()
             loop = asyncio.get_running_loop()
             market = await loop.run_in_executor(
                 None, lambda: self.client.get_market(condition_id)

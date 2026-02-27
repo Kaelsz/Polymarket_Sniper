@@ -26,6 +26,7 @@ from core.dashboard import start_dashboard
 from core.engine import SniperEngine
 from core.persistence import StateStore
 from core.polymarket import polymarket
+from core.rate_limiter import RateLimiter
 from core.risk import RiskConfig, RiskManager
 from core.sizing import OrderSizer, SizingConfig
 from utils.alerts import alert_crash, send_alert
@@ -119,9 +120,12 @@ async def main() -> None:
     log.info("  Max exposure: $%.2f | Max session loss: $%.2f", cfg.max_total_exposure_usdc, cfg.max_session_loss_usdc)
     log.info("  Circuit breaker: fail_threshold=%d, min_healthy=%d", cfg.cb_failure_threshold, cfg.cb_min_healthy_adapters)
     log.info("  Fee rate: %.1f%% | Stop-loss: %s", cfg.fee_rate * 100, f"{cfg.stop_loss_pct:.0%}" if cfg.stop_loss_pct > 0 else "disabled")
+    log.info("  Rate limit: %.1f req/s (burst=%d)", cfg.api_rate_limit, cfg.api_rate_burst)
     log.info("  Dashboard: http://0.0.0.0:%d", cfg.dashboard_port)
     log.info("=" * 60)
 
+    limiter = RateLimiter(rate=cfg.api_rate_limit, burst=cfg.api_rate_burst)
+    polymarket.set_rate_limiter(limiter)
     await polymarket.init()
 
     risk = _build_risk_manager()
@@ -157,7 +161,7 @@ async def main() -> None:
 
     engine = SniperEngine(event_queue, risk=risk, circuit_breaker=cb, state_store=state_store, sizer=sizer)
 
-    dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port)
+    dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port, limiter=limiter)
 
     tasks = [asyncio.create_task(a.run(), name=a.GAME) for a in adapters]
     tasks.append(asyncio.create_task(engine.run(), name="Engine"))

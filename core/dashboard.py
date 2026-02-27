@@ -18,6 +18,7 @@ from aiohttp import web
 if TYPE_CHECKING:
     from core.circuit_breaker import CircuitBreaker
     from core.engine import SniperEngine
+    from core.rate_limiter import RateLimiter
     from core.risk import RiskManager
 
 log = logging.getLogger("polysniper.dashboard")
@@ -25,6 +26,7 @@ log = logging.getLogger("polysniper.dashboard")
 _risk_key: web.AppKey[RiskManager] = web.AppKey("risk")
 _cb_key: web.AppKey[CircuitBreaker | None] = web.AppKey("cb")
 _engine_key: web.AppKey[SniperEngine] = web.AppKey("engine")
+_limiter_key: web.AppKey[RateLimiter | None] = web.AppKey("limiter")
 
 _START_TIME: float = time.time()
 
@@ -40,6 +42,7 @@ def _build_status(
     risk: RiskManager,
     cb: CircuitBreaker | None,
     engine: SniperEngine,
+    limiter: RateLimiter | None = None,
 ) -> dict:
     positions = []
     for p in risk._positions:
@@ -75,6 +78,7 @@ def _build_status(
         "positions": positions,
         "adapters": adapters,
         "trade_count": len(engine._trades),
+        "rate_limiter": limiter.stats if limiter else None,
     }
 
 
@@ -83,6 +87,7 @@ async def _handle_status(request: web.Request) -> web.Response:
         request.app[_risk_key],
         request.app[_cb_key],
         request.app[_engine_key],
+        request.app[_limiter_key],
     )
     return web.json_response(status)
 
@@ -311,6 +316,7 @@ def create_dashboard_app(
     risk: RiskManager,
     cb: CircuitBreaker | None,
     engine: SniperEngine,
+    limiter: RateLimiter | None = None,
 ) -> web.Application:
     """Create and return the aiohttp dashboard application."""
     global _START_TIME
@@ -320,6 +326,7 @@ def create_dashboard_app(
     app[_risk_key] = risk
     app[_cb_key] = cb
     app[_engine_key] = engine
+    app[_limiter_key] = limiter
 
     app.router.add_get("/", _handle_index)
     app.router.add_get("/api/status", _handle_status)
@@ -333,9 +340,10 @@ async def start_dashboard(
     cb: CircuitBreaker | None,
     engine: SniperEngine,
     port: int = 8080,
+    limiter: RateLimiter | None = None,
 ) -> web.AppRunner:
     """Start the dashboard HTTP server as a background task."""
-    app = create_dashboard_app(risk, cb, engine)
+    app = create_dashboard_app(risk, cb, engine, limiter=limiter)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)

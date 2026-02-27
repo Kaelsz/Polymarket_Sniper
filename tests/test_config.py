@@ -36,6 +36,8 @@ def _valid_settings(**overrides) -> Settings:
         "fee_rate": 0.02,
         "stop_loss_pct": 0.0,
         "dashboard_port": 8080,
+        "api_rate_limit": 5.0,
+        "api_rate_burst": 10,
     }
     for k, v in overrides.items():
         if k in poly_kw:
