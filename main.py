@@ -27,6 +27,7 @@ from core.engine import SniperEngine
 from core.persistence import StateStore
 from core.polymarket import polymarket
 from core.risk import RiskConfig, RiskManager
+from core.sizing import OrderSizer, SizingConfig
 from utils.alerts import alert_crash, send_alert
 
 LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
@@ -112,7 +113,8 @@ async def main() -> None:
     log.info("  PolySniper v1.0 — Esport Latency Arbitrage Bot")
     log.info("  Dry run: %s", cfg.dry_run)
     log.info("  Max buy price: $%.2f", cfg.max_buy_price)
-    log.info("  Order size: $%.2f USDC", cfg.order_size_usdc)
+    log.info("  Order sizing: %s (base=$%.2f, range=$%.2f–$%.2f)",
+             cfg.sizing_mode, cfg.order_size_usdc, cfg.min_order_usdc, cfg.max_order_usdc)
     log.info("  Max positions: %d (per game: %d)", cfg.max_open_positions, cfg.max_positions_per_game)
     log.info("  Max exposure: $%.2f | Max session loss: $%.2f", cfg.max_total_exposure_usdc, cfg.max_session_loss_usdc)
     log.info("  Circuit breaker: fail_threshold=%d, min_healthy=%d", cfg.cb_failure_threshold, cfg.cb_min_healthy_adapters)
@@ -144,7 +146,16 @@ async def main() -> None:
     for a in adapters:
         cb.register(a.GAME)
 
-    engine = SniperEngine(event_queue, risk=risk, circuit_breaker=cb, state_store=state_store)
+    sizer = OrderSizer(SizingConfig(
+        mode=cfg.sizing_mode,
+        base_size=cfg.order_size_usdc,
+        min_order=cfg.min_order_usdc,
+        max_order=cfg.max_order_usdc,
+        kelly_fraction=cfg.kelly_fraction,
+        kelly_win_prob=cfg.kelly_win_prob,
+    ))
+
+    engine = SniperEngine(event_queue, risk=risk, circuit_breaker=cb, state_store=state_store, sizer=sizer)
 
     dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port)
 

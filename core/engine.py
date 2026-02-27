@@ -25,6 +25,7 @@ from core.config import settings
 from core.mapper import mapper
 from core.polymarket import polymarket
 from core.risk import PositionRecord, RiskManager
+from core.sizing import OrderSizer
 from utils.alerts import send_alert
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ class SniperEngine:
         risk: RiskManager | None = None,
         circuit_breaker: CircuitBreaker | None = None,
         state_store: StateStore | None = None,
+        sizer: OrderSizer | None = None,
     ) -> None:
         self._queue = queue
         self._risk = risk or RiskManager()
@@ -51,6 +53,7 @@ class SniperEngine:
         self._trades: list[dict] = []
         self._trade_lock = asyncio.Lock()
         self._state_store = state_store
+        self._sizer = sizer or OrderSizer()
 
     async def run(self) -> None:
         log.info("Sniper engine started — waiting for match events...")
@@ -111,7 +114,11 @@ class SniperEngine:
             )
             return
 
-        amount = settings.trading.order_size_usdc
+        amount = self._sizer.compute(
+            fuzzy_score=mapping.score,
+            ask_price=ask,
+            max_buy_price=settings.trading.max_buy_price,
+        )
 
         # Critical section: check + buy + record must be atomic to prevent
         # concurrent duplicate trades on the same match.

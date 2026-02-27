@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from backtest.report import BacktestReport
 from backtest.scenario import Scenario, ScenarioEvent
 from core.risk import RiskConfig, RiskManager
+from core.sizing import OrderSizer, SizingConfig
 
 log = logging.getLogger("polysniper.backtest.runner")
 
@@ -52,12 +53,24 @@ class BacktestRunner:
             stop_loss_pct=sc.stop_loss_pct if sc.stop_loss_pct is not None else 0.0,
         )
         max_buy = sc.max_buy_price if sc.max_buy_price is not None else 0.85
-        order_size = sc.order_size_usdc if sc.order_size_usdc is not None else 50.0
+        base_size = sc.order_size_usdc if sc.order_size_usdc is not None else 50.0
+
+        sizer = OrderSizer(SizingConfig(
+            mode=sc.sizing_mode or "fixed",
+            base_size=base_size,
+            min_order=sc.min_order_usdc if sc.min_order_usdc is not None else 10.0,
+            max_order=sc.max_order_usdc if sc.max_order_usdc is not None else 200.0,
+        ))
 
         risk = RiskManager(cfg)
         self._trades.clear()
 
         for event in sc.events:
+            order_size = sizer.compute(
+                fuzzy_score=event.fuzzy_score,
+                ask_price=event.ask_price,
+                max_buy_price=max_buy,
+            )
             record = TradeRecord(event=event, amount_usdc=order_size, buy_price=event.ask_price)
 
             if event.ask_price > max_buy:

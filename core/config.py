@@ -87,6 +87,21 @@ class TradingConfig:
     dashboard_port: int = field(
         default_factory=lambda: int(os.getenv("DASHBOARD_PORT", "8080"))
     )
+    sizing_mode: str = field(
+        default_factory=lambda: os.getenv("SIZING_MODE", "fixed")
+    )
+    min_order_usdc: float = field(
+        default_factory=lambda: float(os.getenv("MIN_ORDER_USDC", "10.0"))
+    )
+    max_order_usdc: float = field(
+        default_factory=lambda: float(os.getenv("MAX_ORDER_USDC", "200.0"))
+    )
+    kelly_fraction: float = field(
+        default_factory=lambda: float(os.getenv("KELLY_FRACTION", "0.25"))
+    )
+    kelly_win_prob: float = field(
+        default_factory=lambda: float(os.getenv("KELLY_WIN_PROB", "0.90"))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +177,23 @@ def validate_config(s: Settings) -> list[str]:
     # -- Dashboard --
     if not (1 <= t.dashboard_port <= 65535):
         errors.append(f"DASHBOARD_PORT must be in [1, 65535]: got {t.dashboard_port}")
+
+    # -- Sizing --
+    if t.sizing_mode not in ("fixed", "confidence", "kelly"):
+        errors.append(f"SIZING_MODE must be 'fixed', 'confidence', or 'kelly': got '{t.sizing_mode}'")
+    if t.min_order_usdc <= 0:
+        errors.append(f"MIN_ORDER_USDC must be > 0: got {t.min_order_usdc}")
+    if t.max_order_usdc <= 0:
+        errors.append(f"MAX_ORDER_USDC must be > 0: got {t.max_order_usdc}")
+    if t.min_order_usdc > t.max_order_usdc:
+        errors.append(
+            f"MIN_ORDER_USDC ({t.min_order_usdc}) "
+            f"cannot exceed MAX_ORDER_USDC ({t.max_order_usdc})"
+        )
+    if not (0.0 < t.kelly_fraction <= 1.0):
+        errors.append(f"KELLY_FRACTION must be in (0, 1.0]: got {t.kelly_fraction}")
+    if not (0.0 < t.kelly_win_prob < 1.0):
+        errors.append(f"KELLY_WIN_PROB must be in (0, 1.0): got {t.kelly_win_prob}")
 
     return errors
 

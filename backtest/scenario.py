@@ -30,6 +30,7 @@ class ScenarioEvent:
     ask_price: float = 0.50
     resolution: str = ""  # "win", "loss", or "" (unresolved)
     resolution_delay_s: float = 0.0
+    fuzzy_score: float = 90.0
 
 
 @dataclass(slots=True)
@@ -43,6 +44,9 @@ class Scenario:
     order_size_usdc: float | None = None
     fee_rate: float | None = None
     stop_loss_pct: float | None = None
+    sizing_mode: str | None = None
+    min_order_usdc: float | None = None
+    max_order_usdc: float | None = None
 
     @property
     def duration_s(self) -> float:
@@ -71,6 +75,7 @@ def load_scenario(path: Path | str) -> Scenario:
                 ask_price=float(e.get("ask_price", 0.50)),
                 resolution=e.get("resolution", ""),
                 resolution_delay_s=float(e.get("resolution_delay_s", 0.0)),
+                fuzzy_score=float(e.get("fuzzy_score", 90.0)),
             ))
         except (KeyError, ValueError) as exc:
             log.warning("Skipping malformed event #%d: %s", i, exc)
@@ -83,6 +88,9 @@ def load_scenario(path: Path | str) -> Scenario:
         order_size_usdc=raw.get("order_size_usdc"),
         fee_rate=raw.get("fee_rate"),
         stop_loss_pct=raw.get("stop_loss_pct"),
+        sizing_mode=raw.get("sizing_mode"),
+        min_order_usdc=raw.get("min_order_usdc"),
+        max_order_usdc=raw.get("max_order_usdc"),
     )
     log.info("Loaded scenario '%s': %d events", scenario.name, len(events))
     return scenario
