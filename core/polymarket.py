@@ -20,6 +20,7 @@ class PolymarketClient:
         self._client: ClobClient | None = None
         self._lock = asyncio.Lock()
         self._limiter: RateLimiter | None = None
+        self._api_ready: bool = False
 
     def set_rate_limiter(self, limiter: RateLimiter) -> None:
         self._limiter = limiter
@@ -28,7 +29,7 @@ class PolymarketClient:
         if self._limiter:
             await self._limiter.acquire()
 
-    async def init(self) -> None:
+    async def init(self, max_retries: int = 3, retry_delay: float = 5.0) -> None:
         async with self._lock:
             if self._client is not None:
                 return
@@ -42,21 +43,43 @@ class PolymarketClient:
                     chain_id=137,  # Polygon mainnet
                 ),
             )
-            try:
-                api_creds = await loop.run_in_executor(
-                    None, self._client.derive_api_key
-                )
-                await loop.run_in_executor(
-                    None, self._client.set_api_creds, api_creds
-                )
-                log.info("Polymarket CLOB client initialized on Polygon (chain 137)")
-            except Exception as exc:
-                if settings.trading.dry_run:
-                    log.warning(
-                        "API key derivation failed (dry-run mode, non-fatal): %s", exc
+            self._api_ready = False
+            last_exc: Exception | None = None
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    api_creds = await loop.run_in_executor(
+                        None, self._client.derive_api_key
                     )
-                else:
-                    raise
+                    await loop.run_in_executor(
+                        None, self._client.set_api_creds, api_creds
+                    )
+                    self._api_ready = True
+                    log.info("Polymarket CLOB client initialized on Polygon (chain 137)")
+                    return
+                except Exception as exc:
+                    last_exc = exc
+                    log.warning(
+                        "API key derivation attempt %d/%d failed: %s",
+                        attempt, max_retries, exc,
+                    )
+                    if attempt < max_retries:
+                        await asyncio.sleep(retry_delay)
+
+            if settings.trading.dry_run:
+                log.warning(
+                    "API key derivation failed after %d attempts (dry-run mode, non-fatal). "
+                    "Markets can still be fetched but orders will be simulated.",
+                    max_retries,
+                )
+            else:
+                log.error(
+                    "API key derivation failed after %d attempts. "
+                    "Check that your wallet (POLYMARKET_ADDRESS) has signed up on polymarket.com "
+                    "and that POLY_PRIVATE_KEY is correct. "
+                    "The bot will start but CANNOT place orders until the API key is derived.",
+                    max_retries,
+                )
 
     @property
     def client(self) -> ClobClient:
@@ -85,6 +108,10 @@ class PolymarketClient:
             log.warning("[DRY RUN] Would buy token %s for $%.2f", token_id, amount)
             return None
 
+        if not self._api_ready:
+            log.error("ORDER BLOCKED: API key not derived — cannot place orders")
+            return None
+
         await self._throttle()
         loop = asyncio.get_running_loop()
         order_args = OrderArgs(
@@ -104,6 +131,10 @@ class PolymarketClient:
         """Place a market-sell order for the given number of shares."""
         if settings.trading.dry_run:
             log.warning("[DRY RUN] Would sell %.2f shares of %s", shares, token_id)
+            return None
+
+        if not self._api_ready:
+            log.error("ORDER BLOCKED: API key not derived — cannot place orders")
             return None
 
         await self._throttle()
