@@ -307,8 +307,17 @@ class RiskManager:
 
     def load_state_dict(self, state: dict) -> None:
         self._session_pnl = state.get("session_pnl", 0.0)
-        self._halted = state.get("halted", False)
-        self._halt_reason = state.get("halt_reason", "")
+
+        saved_halted = state.get("halted", False)
+        saved_reason = state.get("halt_reason", "")
+        if saved_halted and "circuit breaker" in saved_reason.lower():
+            self._halted = False
+            self._halt_reason = ""
+            log.info("RISK  Ignoring persisted CB halt on restart (CB resets on boot)")
+        else:
+            self._halted = saved_halted
+            self._halt_reason = saved_reason
+
         self._positions = [
             PositionRecord(**p) for p in state.get("positions", [])
         ]
