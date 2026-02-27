@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,6 +9,10 @@ from dotenv import load_dotenv
 
 _ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(_ENV_PATH)
+
+
+class ConfigError(Exception):
+    """Raised when configuration validation fails."""
 
 
 def _require(var: str) -> str:
@@ -89,6 +94,76 @@ class Settings:
     poly: PolymarketConfig = field(default_factory=PolymarketConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
+
+
+_HEX_RE = re.compile(r"^0x[0-9a-fA-F]+$")
+
+
+def validate_config(s: Settings) -> list[str]:
+    """
+    Validate all configuration values at startup.
+
+    Returns a list of error messages. An empty list means config is valid.
+    """
+    errors: list[str] = []
+    p = s.poly
+    t = s.trading
+
+    # -- Polymarket credentials --
+    if not _HEX_RE.match(p.address):
+        errors.append(f"POLYMARKET_ADDRESS must be a hex address (0x...): got '{p.address}'")
+    if len(p.address) != 42:
+        errors.append(f"POLYMARKET_ADDRESS must be 42 characters (got {len(p.address)})")
+    if not _HEX_RE.match(p.private_key):
+        errors.append(f"POLY_PRIVATE_KEY must be a hex string (0x...)")
+    if not p.host.startswith("http"):
+        errors.append(f"POLYMARKET_HOST must be an HTTP(S) URL: got '{p.host}'")
+
+    # -- Trading parameters --
+    if not (0.0 < t.max_buy_price <= 1.0):
+        errors.append(f"MAX_BUY_PRICE must be in (0, 1.0]: got {t.max_buy_price}")
+    if t.order_size_usdc <= 0:
+        errors.append(f"ORDER_SIZE_USDC must be > 0: got {t.order_size_usdc}")
+    if t.max_open_positions < 1:
+        errors.append(f"MAX_OPEN_POSITIONS must be >= 1: got {t.max_open_positions}")
+    if t.max_positions_per_game < 1:
+        errors.append(f"MAX_POSITIONS_PER_GAME must be >= 1: got {t.max_positions_per_game}")
+    if t.max_positions_per_game > t.max_open_positions:
+        errors.append(
+            f"MAX_POSITIONS_PER_GAME ({t.max_positions_per_game}) "
+            f"cannot exceed MAX_OPEN_POSITIONS ({t.max_open_positions})"
+        )
+    if t.max_session_loss_usdc <= 0:
+        errors.append(f"MAX_SESSION_LOSS_USDC must be > 0: got {t.max_session_loss_usdc}")
+    if t.max_total_exposure_usdc <= 0:
+        errors.append(f"MAX_TOTAL_EXPOSURE_USDC must be > 0: got {t.max_total_exposure_usdc}")
+    if t.order_size_usdc > t.max_total_exposure_usdc:
+        errors.append(
+            f"ORDER_SIZE_USDC ({t.order_size_usdc}) "
+            f"cannot exceed MAX_TOTAL_EXPOSURE_USDC ({t.max_total_exposure_usdc})"
+        )
+    if t.match_cooldown_seconds < 0:
+        errors.append(f"MATCH_COOLDOWN_SECONDS must be >= 0: got {t.match_cooldown_seconds}")
+
+    # -- Fees & stop-loss --
+    if not (0.0 <= t.fee_rate < 1.0):
+        errors.append(f"FEE_RATE must be in [0, 1.0): got {t.fee_rate}")
+    if not (0.0 <= t.stop_loss_pct < 1.0):
+        errors.append(f"STOP_LOSS_PCT must be in [0, 1.0): got {t.stop_loss_pct}")
+
+    # -- Circuit breaker --
+    if t.cb_failure_threshold < 1:
+        errors.append(f"CB_FAILURE_THRESHOLD must be >= 1: got {t.cb_failure_threshold}")
+    if t.cb_min_healthy_adapters < 0:
+        errors.append(f"CB_MIN_HEALTHY_ADAPTERS must be >= 0: got {t.cb_min_healthy_adapters}")
+    if t.cb_stale_data_timeout <= 0:
+        errors.append(f"CB_STALE_DATA_TIMEOUT must be > 0: got {t.cb_stale_data_timeout}")
+
+    # -- Dashboard --
+    if not (1 <= t.dashboard_port <= 65535):
+        errors.append(f"DASHBOARD_PORT must be in [1, 65535]: got {t.dashboard_port}")
+
+    return errors
 
 
 settings = Settings()

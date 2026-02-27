@@ -21,7 +21,7 @@ from adapters.dota2_adapter import Dota2Adapter
 from adapters.lol_adapter import LoLAdapter
 from adapters.valorant_adapter import ValorantAdapter
 from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from core.config import settings
+from core.config import ConfigError, settings, validate_config
 from core.dashboard import start_dashboard
 from core.engine import SniperEngine
 from core.persistence import StateStore
@@ -99,6 +99,14 @@ def _build_circuit_breaker(risk: RiskManager) -> CircuitBreaker:
 
 
 async def main() -> None:
+    config_errors = validate_config(settings)
+    if config_errors:
+        for err in config_errors:
+            log.error("CONFIG  %s", err)
+        raise ConfigError(
+            f"{len(config_errors)} configuration error(s) — fix .env and restart"
+        )
+
     cfg = settings.trading
     log.info("=" * 60)
     log.info("  PolySniper v1.0 — Esport Latency Arbitrage Bot")
