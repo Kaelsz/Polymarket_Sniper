@@ -1,0 +1,142 @@
+{
+  "name": "Example Esport Session",
+  "description": "A simulated evening of esport matches across 4 games with mixed outcomes.",
+  "max_buy_price": 0.85,
+  "order_size_usdc": 50.0,
+  "fee_rate": 0.02,
+  "events": [
+    {
+      "timestamp": 1000,
+      "game": "CS2",
+      "team_won": "NAVI",
+      "team_lost": "G2 Esports",
+      "event": "Map Won",
+      "match_id": "cs2_match_1",
+      "token_id": "tok_cs2_navi_1",
+      "ask_price": 0.55,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 1200,
+      "game": "LoL",
+      "team_won": "T1",
+      "team_lost": "Gen.G",
+      "event": "Match Ended",
+      "match_id": "lol_match_1",
+      "token_id": "tok_lol_t1_1",
+      "ask_price": 0.72,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 1500,
+      "game": "CS2",
+      "team_won": "FaZe Clan",
+      "team_lost": "Team Liquid",
+      "event": "Map Won",
+      "match_id": "cs2_match_2",
+      "token_id": "tok_cs2_faze_1",
+      "ask_price": 0.60,
+      "resolution": "loss"
+    },
+    {
+      "timestamp": 1800,
+      "game": "Valorant",
+      "team_won": "Sentinels",
+      "team_lost": "LOUD",
+      "event": "Series Won",
+      "match_id": "val_match_1",
+      "token_id": "tok_val_sen_1",
+      "ask_price": 0.48,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 2100,
+      "game": "Dota2",
+      "team_won": "Team Spirit",
+      "team_lost": "OG",
+      "event": "Match Ended",
+      "match_id": "dota_match_1",
+      "token_id": "tok_dota_spirit_1",
+      "ask_price": 0.65,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 2400,
+      "game": "CS2",
+      "team_won": "NAVI",
+      "team_lost": "Vitality",
+      "event": "Map Won",
+      "match_id": "cs2_match_3",
+      "token_id": "tok_cs2_navi_2",
+      "ask_price": 0.70,
+      "resolution": "loss"
+    },
+    {
+      "timestamp": 2700,
+      "game": "LoL",
+      "team_won": "Gen.G",
+      "team_lost": "Bilibili Gaming",
+      "event": "Match Ended",
+      "match_id": "lol_match_2",
+      "token_id": "tok_lol_geng_1",
+      "ask_price": 0.58,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 3000,
+      "game": "Valorant",
+      "team_won": "Fnatic",
+      "team_lost": "Paper Rex",
+      "event": "Series Won",
+      "match_id": "val_match_2",
+      "token_id": "tok_val_fnc_1",
+      "ask_price": 0.62,
+      "resolution": "loss"
+    },
+    {
+      "timestamp": 3300,
+      "game": "CS2",
+      "team_won": "G2 Esports",
+      "team_lost": "Heroic",
+      "event": "Map Won",
+      "match_id": "cs2_match_4",
+      "token_id": "tok_cs2_g2_1",
+      "ask_price": 0.90,
+      "resolution": "win",
+      "_comment": "Price too high — should be vetoed"
+    },
+    {
+      "timestamp": 3600,
+      "game": "Dota2",
+      "team_won": "Tundra Esports",
+      "team_lost": "Gaimin Gladiators",
+      "event": "Match Ended",
+      "match_id": "dota_match_2",
+      "token_id": "tok_dota_tundra_1",
+      "ask_price": 0.52,
+      "resolution": "win"
+    },
+    {
+      "timestamp": 3900,
+      "game": "LoL",
+      "team_won": "T1",
+      "team_lost": "DRX",
+      "event": "Match Ended",
+      "match_id": "lol_match_3",
+      "token_id": "tok_lol_t1_2",
+      "ask_price": 0.80,
+      "resolution": "loss"
+    },
+    {
+      "timestamp": 4200,
+      "game": "CS2",
+      "team_won": "NAVI",
+      "team_lost": "MOUZ",
+      "event": "Match Ended",
+      "match_id": "cs2_match_5",
+      "token_id": "tok_cs2_navi_3",
+      "ask_price": 0.45,
+      "resolution": "win"
+    }
+  ]
+}
