@@ -73,8 +73,8 @@ class ValorantAdapter(BaseAdapter):
 
         for m in re.finditer(
             r'href="/(\d+)/[^"]*".*?'
-            r'class="match-item-vs-team-name">\s*<div[^>]*>\s*([^<]+)<.*?'
-            r'class="match-item-vs-team-name">\s*<div[^>]*>\s*([^<]+)<',
+            r'class="match-item-vs-team-name">\s*<div[^>]*>\s*(?:<span[^>]*></span>\s*)?([^<]+)<.*?'
+            r'class="match-item-vs-team-name">\s*<div[^>]*>\s*(?:<span[^>]*></span>\s*)?([^<]+)<',
             html,
             re.DOTALL,
         ):
@@ -98,38 +98,44 @@ class ValorantAdapter(BaseAdapter):
         except Exception:
             return
 
-        # Detect completed series — VLR shows "won" in the header
-        winner_match = re.search(
-            r'class="match-header-link-name[^"]*"[^>]*>\s*'
-            r'<div[^>]*>\s*([^<]+)</div>\s*</a>\s*'
-            r'.*?class="match-header-vs-score"[^>]*>.*?'
-            r'<span[^>]*class="[^"]*mod-won[^"]*"',
+        if not re.search(r'class="match-header-vs-note[^"]*"[^>]*>\s*final\s*<', html, re.IGNORECASE):
+            return
+
+        team1 = self._extract_header_team(html, "mod-1") or meta.get("team1", "")
+        team2 = self._extract_header_team(html, "mod-2") or meta.get("team2", "")
+        if not team1 or not team2:
+            return
+
+        score_block = re.search(
+            r'class="match-header-vs-score"[^>]*>.*?'
+            r'<span[^>]*class="[^"]*match-header-vs-score-(winner|loser)[^"]*"[^>]*>\s*(\d+)\s*</span>',
             html,
             re.DOTALL,
         )
-
-        if winner_match:
-            winner = winner_match.group(1).strip()
-            loser = (
-                meta["team2"] if winner.lower() == meta["team1"].lower()
-                else meta["team1"]
-            )
-            self._seen_finished.add(match_id)
-            self._tracked_matches.pop(match_id, None)
-            await self.emit(MatchEvent(
-                game=self.GAME,
-                team_won=winner,
-                team_lost=loser,
-                event="Series Won",
-                match_id=match_id,
-            ))
+        if not score_block:
             return
 
-        # Detect individual map wins via score cells with mod-win class
-        for map_match in re.finditer(
-            r'class="[^"]*mod-(?:1st|2nd|3rd)[^"]*".*?'
-            r'class="[^"]*mod-win[^"]*"[^>]*>\s*(\d+)\s*<',
+        team1_is_winner = score_block.group(1) == "winner"
+        winner = team1 if team1_is_winner else team2
+        loser = team2 if team1_is_winner else team1
+
+        self._seen_finished.add(match_id)
+        self._tracked_matches.pop(match_id, None)
+        await self.emit(MatchEvent(
+            game=self.GAME,
+            team_won=winner,
+            team_lost=loser,
+            event="Series Won",
+            match_id=match_id,
+        ))
+
+    @staticmethod
+    def _extract_header_team(html: str, mod_class: str) -> str:
+        """Extract team name from match detail header (mod-1 or mod-2)."""
+        m = re.search(
+            rf'class="match-header-link-name\s+{mod_class}"[^>]*>.*?'
+            r'class="wf-title-med[^"]*"[^>]*>\s*([^<]+?)\s*</div>',
             html,
             re.DOTALL,
-        ):
-            pass  # map-level tracking can be extended here
+        )
+        return m.group(1).strip() if m else ""
