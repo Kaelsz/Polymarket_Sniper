@@ -7,13 +7,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_DIR=/app/logs
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
       - polysniper-data:/app/data
       - polysniper-logs:/app/logs
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 60s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')"]
+      interval: 30s
+      timeout: 5s
       retries: 3
 
 volumes:

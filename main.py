@@ -22,6 +22,7 @@ from adapters.lol_adapter import LoLAdapter
 from adapters.valorant_adapter import ValorantAdapter
 from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from core.config import settings
+from core.dashboard import start_dashboard
 from core.engine import SniperEngine
 from core.persistence import StateStore
 from core.polymarket import polymarket
@@ -108,6 +109,7 @@ async def main() -> None:
     log.info("  Max exposure: $%.2f | Max session loss: $%.2f", cfg.max_total_exposure_usdc, cfg.max_session_loss_usdc)
     log.info("  Circuit breaker: fail_threshold=%d, min_healthy=%d", cfg.cb_failure_threshold, cfg.cb_min_healthy_adapters)
     log.info("  Fee rate: %.1f%% | Stop-loss: %s", cfg.fee_rate * 100, f"{cfg.stop_loss_pct:.0%}" if cfg.stop_loss_pct > 0 else "disabled")
+    log.info("  Dashboard: http://0.0.0.0:%d", cfg.dashboard_port)
     log.info("=" * 60)
 
     await polymarket.init()
@@ -136,6 +138,8 @@ async def main() -> None:
 
     engine = SniperEngine(event_queue, risk=risk, circuit_breaker=cb, state_store=state_store)
 
+    dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port)
+
     tasks = [asyncio.create_task(a.run(), name=a.GAME) for a in adapters]
     tasks.append(asyncio.create_task(engine.run(), name="Engine"))
     tasks.append(asyncio.create_task(cb.monitor_loop(), name="CircuitBreaker"))
@@ -160,6 +164,7 @@ async def main() -> None:
         await alert_crash(str(exc))
         raise
     finally:
+        await dashboard_runner.cleanup()
         state_store.save(risk)
         log.info("Final state saved.")
 

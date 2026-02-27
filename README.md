@@ -43,10 +43,11 @@ Esport latency arbitrage bot for [Polymarket](https://polymarket.com). Detects m
 - **Circuit breaker** — Monitors adapter health, halts trading on too many failures or stale data
 - **State persistence** — JSON atomic writes, survives restarts
 - **Telegram alerts** — Trade executions, stop-loss triggers, crashes, circuit breaker events
+- **Real-time HTTP dashboard** — Live web UI at `http://localhost:8080` showing positions, PnL, adapter health, trades (auto-refreshes every 5s)
 - **Rotating file logs** — 10 MB per file, 5 backups (configurable)
 - **Docker ready** — Dockerfile + docker-compose with named volumes for data and logs
 - **Dry-run mode** — Full pipeline without placing real orders
-- **271 tests** — Unit, integration, and end-to-end with pytest
+- **289 tests** — Unit, integration, and end-to-end with pytest
 
 ## Quick Start
 
@@ -120,6 +121,7 @@ All parameters are set via environment variables (or `.env` file):
 | `MATCH_COOLDOWN_SECONDS` | `30.0` | Cooldown between trades on same match |
 | `FEE_RATE` | `0.02` | Polymarket fee rate on winning positions |
 | `STOP_LOSS_PCT` | `0.0` | Stop-loss threshold (0 = disabled, 0.3 = 30%) |
+| `DASHBOARD_PORT` | `8080` | HTTP dashboard port |
 | `CB_FAILURE_THRESHOLD` | `3` | Adapter failures before circuit opens |
 | `CB_MIN_HEALTHY_ADAPTERS` | `1` | Min healthy adapters to keep trading |
 | `CB_STALE_DATA_TIMEOUT` | `120.0` | Seconds before adapter data is stale |
@@ -144,7 +146,8 @@ polymarket_trade/
 │   ├── polymarket.py        # Async Polymarket CLOB client wrapper
 │   ├── risk.py              # RiskManager — limits, dedup, PnL, fees
 │   ├── circuit_breaker.py   # Adapter health monitoring
-│   └── persistence.py       # JSON state persistence (atomic writes)
+│   ├── persistence.py       # JSON state persistence (atomic writes)
+│   └── dashboard.py         # Real-time HTTP dashboard (aiohttp)
 ├── utils/
 │   └── alerts.py            # Telegram notification system
 ├── tests/                   # 271 tests (pytest + pytest-asyncio)

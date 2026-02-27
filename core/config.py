@@ -79,6 +79,9 @@ class TradingConfig:
     stop_loss_pct: float = field(
         default_factory=lambda: float(os.getenv("STOP_LOSS_PCT", "0.0"))
     )
+    dashboard_port: int = field(
+        default_factory=lambda: int(os.getenv("DASHBOARD_PORT", "8080"))
+    )
 
 
 @dataclass(frozen=True, slots=True)
