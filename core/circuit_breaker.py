@@ -137,6 +137,18 @@ class CircuitBreaker:
             )
             self._evaluate_global_state()
 
+    def record_heartbeat(self, adapter_name: str) -> None:
+        """Update last-seen timestamp without counting as a match event.
+
+        Adapters should call this on each successful poll cycle so the
+        stale-data detector knows the feed is alive even when no matches
+        are finishing.
+        """
+        health = self._adapters.get(adapter_name)
+        if not health:
+            return
+        health.last_event_time = time.time()
+
     def record_reconnect(self, adapter_name: str) -> None:
         """Called when an adapter successfully reconnects."""
         health = self._adapters.get(adapter_name)

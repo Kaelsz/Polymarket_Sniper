@@ -62,6 +62,7 @@ class LoLAdapter(BaseAdapter):
                     if game_id in self._seen_finished:
                         continue
                     await self._check_game_state(game_id, game)
+                self._heartbeat()
             except Exception as exc:
                 self.log.debug("LoL poll error: %s", exc)
 

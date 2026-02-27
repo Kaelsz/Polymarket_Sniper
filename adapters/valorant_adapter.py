@@ -52,6 +52,7 @@ class ValorantAdapter(BaseAdapter):
                 for match_id, meta in list(self._tracked_matches.items()):
                     if match_id not in self._seen_finished:
                         await self._poll_match(match_id, meta)
+                self._heartbeat()
             except Exception as exc:
                 self.log.debug("VLR poll error: %s", exc)
 

@@ -50,6 +50,11 @@ class BaseAdapter(ABC):
         self.log = logging.getLogger(f"polysniper.adapter.{self.GAME.lower()}")
         self._running = False
 
+    def _heartbeat(self) -> None:
+        """Signal the circuit breaker that this adapter is alive and polling."""
+        if self._cb:
+            self._cb.record_heartbeat(self.GAME)
+
     async def emit(self, event: MatchEvent) -> None:
         self.log.info("EVENT  %s | %s beat %s", event.game, event.team_won, event.team_lost)
         await self._queue.put(event)

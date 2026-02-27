@@ -54,6 +54,7 @@ class Dota2Adapter(BaseAdapter):
         while self._running:
             try:
                 await self._poll_live()
+                self._heartbeat()
             except Exception as exc:
                 self.log.debug("Dota2 poll error: %s", exc)
 
