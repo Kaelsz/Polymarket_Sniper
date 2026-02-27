@@ -52,8 +52,11 @@ class TelegramConfig:
 
 @dataclass(frozen=True, slots=True)
 class TradingConfig:
+    min_buy_price: float = field(
+        default_factory=lambda: float(os.getenv("MIN_BUY_PRICE", "0.95"))
+    )
     max_buy_price: float = field(
-        default_factory=lambda: float(os.getenv("MAX_BUY_PRICE", "0.85"))
+        default_factory=lambda: float(os.getenv("MAX_BUY_PRICE", "0.99"))
     )
     order_size_usdc: float = field(
         default_factory=lambda: float(os.getenv("ORDER_SIZE_USDC", "50.0"))
@@ -109,6 +112,12 @@ class TradingConfig:
     kelly_win_prob: float = field(
         default_factory=lambda: float(os.getenv("KELLY_WIN_PROB", "0.90"))
     )
+    scanner_interval: float = field(
+        default_factory=lambda: float(os.getenv("SCANNER_INTERVAL", "30.0"))
+    )
+    min_volume_usdc: float = field(
+        default_factory=lambda: float(os.getenv("MIN_VOLUME_USDC", "100000.0"))
+    )
     api_rate_limit: float = field(
         default_factory=lambda: float(os.getenv("API_RATE_LIMIT", "5.0"))
     )
@@ -148,8 +157,15 @@ def validate_config(s: Settings) -> list[str]:
         errors.append(f"POLYMARKET_HOST must be an HTTP(S) URL: got '{p.host}'")
 
     # -- Trading parameters --
+    if not (0.0 <= t.min_buy_price < 1.0):
+        errors.append(f"MIN_BUY_PRICE must be in [0, 1.0): got {t.min_buy_price}")
     if not (0.0 < t.max_buy_price <= 1.0):
         errors.append(f"MAX_BUY_PRICE must be in (0, 1.0]: got {t.max_buy_price}")
+    if t.min_buy_price >= t.max_buy_price:
+        errors.append(
+            f"MIN_BUY_PRICE ({t.min_buy_price}) must be less than "
+            f"MAX_BUY_PRICE ({t.max_buy_price})"
+        )
     if t.order_size_usdc <= 0:
         errors.append(f"ORDER_SIZE_USDC must be > 0: got {t.order_size_usdc}")
     if t.max_open_positions < 1:
@@ -207,6 +223,12 @@ def validate_config(s: Settings) -> list[str]:
         errors.append(f"KELLY_FRACTION must be in (0, 1.0]: got {t.kelly_fraction}")
     if not (0.0 < t.kelly_win_prob < 1.0):
         errors.append(f"KELLY_WIN_PROB must be in (0, 1.0): got {t.kelly_win_prob}")
+
+    # -- Scanner --
+    if t.scanner_interval <= 0:
+        errors.append(f"SCANNER_INTERVAL must be > 0: got {t.scanner_interval}")
+    if t.min_volume_usdc < 0:
+        errors.append(f"MIN_VOLUME_USDC must be >= 0: got {t.min_volume_usdc}")
 
     # -- Rate limiting --
     if t.api_rate_limit <= 0:

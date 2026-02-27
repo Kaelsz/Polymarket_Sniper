@@ -1,9 +1,9 @@
 """
-PolySniper v1.0 — Entry Point
+PolySniper v2.0 — Entry Point
 
-Launches 3 esport adapters (LoL, Valorant, Dota2) concurrently + the sniper
-execution engine, with integrated risk management, circuit breaker, and state
-persistence.
+Scans all Polymarket markets for near-resolution tokens (price 0.95–0.99),
+buys confirmed outcomes with sufficient volume ($100K+), and collects
+small guaranteed profits on resolution.
 """
 
 from __future__ import annotations
@@ -16,10 +16,6 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from adapters.base import MatchEvent
-from adapters.dota2_adapter import Dota2Adapter
-from adapters.lol_adapter import LoLAdapter
-from adapters.valorant_adapter import ValorantAdapter
 from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from core.config import ConfigError, settings, validate_config
 from core.dashboard import start_dashboard
@@ -28,6 +24,7 @@ from core.persistence import StateStore
 from core.polymarket import polymarket
 from core.rate_limiter import RateLimiter
 from core.risk import RiskConfig, RiskManager
+from core.scanner import MarketScanner, Opportunity
 from core.sizing import OrderSizer, SizingConfig
 from utils.alerts import alert_crash, send_alert
 
@@ -84,7 +81,7 @@ def _build_circuit_breaker(risk: RiskManager) -> CircuitBreaker:
     cfg = settings.trading
 
     async def _on_halt() -> None:
-        risk.halt("Circuit breaker triggered — too many adapter failures")
+        risk.halt("Circuit breaker triggered — scanner failures")
         await send_alert("CIRCUIT BREAKER OPEN — Trading halted")
 
     async def _on_resume() -> None:
@@ -113,14 +110,15 @@ async def main() -> None:
 
     cfg = settings.trading
     log.info("=" * 60)
-    log.info("  PolySniper v1.0 — Esport Latency Arbitrage Bot")
+    log.info("  PolySniper v2.0 — All-Market Resolution Sniper")
     log.info("  Dry run: %s", cfg.dry_run)
-    log.info("  Max buy price: $%.2f", cfg.max_buy_price)
+    log.info("  Buy price window: $%.2f–$%.2f", cfg.min_buy_price, cfg.max_buy_price)
+    log.info("  Min volume: $%.0fK", cfg.min_volume_usdc / 1000)
+    log.info("  Scan interval: %ds", cfg.scanner_interval)
     log.info("  Order sizing: %s (base=$%.2f, range=$%.2f–$%.2f)",
              cfg.sizing_mode, cfg.order_size_usdc, cfg.min_order_usdc, cfg.max_order_usdc)
-    log.info("  Max positions: %d (per game: %d)", cfg.max_open_positions, cfg.max_positions_per_game)
+    log.info("  Max positions: %d", cfg.max_open_positions)
     log.info("  Max exposure: $%.2f | Max session loss: $%.2f", cfg.max_total_exposure_usdc, cfg.max_session_loss_usdc)
-    log.info("  Circuit breaker: fail_threshold=%d, min_healthy=%d", cfg.cb_failure_threshold, cfg.cb_min_healthy_adapters)
     log.info("  Fee rate: %.1f%% | Stop-loss: %s", cfg.fee_rate * 100, f"{cfg.stop_loss_pct:.0%}" if cfg.stop_loss_pct > 0 else "disabled")
     log.info("  Rate limit: %.1f req/s (burst=%d)", cfg.api_rate_limit, cfg.api_rate_burst)
     log.info("  Dashboard: http://0.0.0.0:%d", cfg.dashboard_port)
@@ -140,16 +138,10 @@ async def main() -> None:
             risk.open_positions, risk.session_pnl,
         )
 
-    event_queue: asyncio.Queue[MatchEvent] = asyncio.Queue()
+    opp_queue: asyncio.Queue[Opportunity] = asyncio.Queue()
 
-    adapters = [
-        LoLAdapter(event_queue, circuit_breaker=cb),
-        ValorantAdapter(event_queue, circuit_breaker=cb),
-        Dota2Adapter(event_queue, circuit_breaker=cb),
-    ]
-
-    for a in adapters:
-        cb.register(a.GAME)
+    scanner = MarketScanner(opp_queue, circuit_breaker=cb)
+    cb.register(scanner.GAME)
 
     sizer = OrderSizer(SizingConfig(
         mode=cfg.sizing_mode,
@@ -160,19 +152,20 @@ async def main() -> None:
         kelly_win_prob=cfg.kelly_win_prob,
     ))
 
-    engine = SniperEngine(event_queue, risk=risk, circuit_breaker=cb, state_store=state_store, sizer=sizer)
+    engine = SniperEngine(opp_queue, risk=risk, circuit_breaker=cb, state_store=state_store, sizer=sizer)
 
     dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port, limiter=limiter)
 
-    tasks = [asyncio.create_task(a.run(), name=a.GAME) for a in adapters]
-    tasks.append(asyncio.create_task(engine.run(), name="Engine"))
-    tasks.append(asyncio.create_task(cb.monitor_loop(), name="CircuitBreaker"))
+    tasks = [
+        asyncio.create_task(scanner.run(), name="Scanner"),
+        asyncio.create_task(engine.run(), name="Engine"),
+        asyncio.create_task(cb.monitor_loop(), name="CircuitBreaker"),
+    ]
 
     def _shutdown() -> None:
         log.info("Shutdown signal received — saving state and stopping...")
         state_store.save(risk)
-        for a in adapters:
-            a.stop()
+        scanner.stop()
         for t in tasks:
             t.cancel()
 

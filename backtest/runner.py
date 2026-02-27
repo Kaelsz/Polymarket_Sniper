@@ -52,7 +52,8 @@ class BacktestRunner:
             fee_rate=sc.fee_rate if sc.fee_rate is not None else 0.02,
             stop_loss_pct=sc.stop_loss_pct if sc.stop_loss_pct is not None else 0.0,
         )
-        max_buy = sc.max_buy_price if sc.max_buy_price is not None else 0.85
+        min_buy = sc.min_buy_price if sc.min_buy_price is not None else 0.0
+        max_buy = sc.max_buy_price if sc.max_buy_price is not None else 0.99
         base_size = sc.order_size_usdc if sc.order_size_usdc is not None else 50.0
 
         sizer = OrderSizer(SizingConfig(
@@ -72,6 +73,14 @@ class BacktestRunner:
                 max_buy_price=max_buy,
             )
             record = TradeRecord(event=event, amount_usdc=order_size, buy_price=event.ask_price)
+
+            if event.ask_price < min_buy:
+                record.vetoed = True
+                record.veto_reason = (
+                    f"ask ${event.ask_price:.3f} < min ${min_buy:.2f}"
+                )
+                self._trades.append(record)
+                continue
 
             if event.ask_price > max_buy:
                 record.vetoed = True

@@ -200,9 +200,9 @@ _HTML_TEMPLATE = """\
 </div>
 
 <div class="section">
-  <h2>Adapters</h2>
+  <h2>Scanner</h2>
   <table>
-    <thead><tr><th>Adapter</th><th>State</th><th>Events</th><th>Failures</th><th>Last Event</th></tr></thead>
+    <thead><tr><th>Feed</th><th>State</th><th>Events</th><th>Failures</th><th>Last Event</th></tr></thead>
     <tbody id="adapters-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
   </table>
 </div>
@@ -210,7 +210,7 @@ _HTML_TEMPLATE = """\
 <div class="section">
   <h2>Open Positions</h2>
   <table>
-    <thead><tr><th>Game</th><th>Team</th><th>Size</th><th>Buy Price</th><th>Age</th></tr></thead>
+    <thead><tr><th>Market</th><th>Outcome</th><th>Size</th><th>Buy Price</th><th>Age</th></tr></thead>
     <tbody id="positions-body"><tr><td colspan="5" class="empty">No open positions</td></tr></tbody>
   </table>
 </div>
@@ -218,7 +218,7 @@ _HTML_TEMPLATE = """\
 <div class="section">
   <h2>Recent Trades</h2>
   <table>
-    <thead><tr><th>Game</th><th>Team</th><th>Market</th><th>Ask</th><th>Size</th><th>Latency</th></tr></thead>
+    <thead><tr><th>Market</th><th>Outcome</th><th>Ask</th><th>Size</th><th>Volume</th><th>Latency</th></tr></thead>
     <tbody id="trades-body"><tr><td colspan="6" class="empty">No trades yet</td></tr></tbody>
   </table>
 </div>

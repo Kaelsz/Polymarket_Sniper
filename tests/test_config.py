@@ -22,7 +22,10 @@ def _valid_settings(**overrides) -> Settings:
         "host": "https://clob.polymarket.com",
     }
     trading_kw = {
+        "min_buy_price": 0.0,
         "max_buy_price": 0.85,
+        "scanner_interval": 30.0,
+        "min_volume_usdc": 100000.0,
         "order_size_usdc": 50.0,
         "dry_run": True,
         "max_open_positions": 10,
@@ -96,7 +99,8 @@ class TestTradingConfig:
         from core.config import TradingConfig
 
         cfg = TradingConfig()
-        assert cfg.max_buy_price == 0.85
+        assert cfg.min_buy_price == float(os.getenv("MIN_BUY_PRICE", "0.95"))
+        assert cfg.max_buy_price == float(os.getenv("MAX_BUY_PRICE", "0.99"))
         assert cfg.order_size_usdc == 50.0
         assert cfg.dry_run is True
 
@@ -130,6 +134,9 @@ class TestValidateConfigValid:
     def test_valid_edge_max_buy_price_1(self):
         assert validate_config(_valid_settings(max_buy_price=1.0)) == []
 
+    def test_valid_min_buy_price_zero(self):
+        assert validate_config(_valid_settings(min_buy_price=0.0)) == []
+
     def test_valid_fee_rate_zero(self):
         assert validate_config(_valid_settings(fee_rate=0.0)) == []
 
@@ -162,6 +169,14 @@ class TestValidateConfigTrading:
     def test_max_buy_price_above_one(self):
         errs = validate_config(_valid_settings(max_buy_price=1.5))
         assert any("MAX_BUY_PRICE" in e for e in errs)
+
+    def test_min_buy_price_negative(self):
+        errs = validate_config(_valid_settings(min_buy_price=-0.1))
+        assert any("MIN_BUY_PRICE" in e for e in errs)
+
+    def test_min_exceeds_max(self):
+        errs = validate_config(_valid_settings(min_buy_price=0.90, max_buy_price=0.85))
+        assert any("MIN_BUY_PRICE" in e and "less than" in e for e in errs)
 
     def test_order_size_negative(self):
         errs = validate_config(_valid_settings(order_size_usdc=-10.0))

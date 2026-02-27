@@ -40,6 +40,7 @@ class Scenario:
     name: str = "Unnamed"
     description: str = ""
     events: list[ScenarioEvent] = field(default_factory=list)
+    min_buy_price: float | None = None
     max_buy_price: float | None = None
     order_size_usdc: float | None = None
     fee_rate: float | None = None
@@ -84,6 +85,7 @@ def load_scenario(path: Path | str) -> Scenario:
         name=raw.get("name", path.stem),
         description=raw.get("description", ""),
         events=events,
+        min_buy_price=raw.get("min_buy_price"),
         max_buy_price=raw.get("max_buy_price"),
         order_size_usdc=raw.get("order_size_usdc"),
         fee_rate=raw.get("fee_rate"),

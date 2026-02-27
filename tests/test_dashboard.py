@@ -26,8 +26,7 @@ def risk():
 @pytest.fixture
 def cb():
     breaker = CircuitBreaker(CircuitBreakerConfig(failure_threshold=3))
-    breaker.register("CS2")
-    breaker.register("LoL")
+    breaker.register("Scanner")
     return breaker
 
 
@@ -85,16 +84,15 @@ class TestApiStatus:
     async def test_status_shows_adapters(self, client):
         resp = await client.get("/api/status")
         data = await resp.json()
-        assert "CS2" in data["adapters"]
-        assert "LoL" in data["adapters"]
-        assert data["adapters"]["CS2"]["state"] == "CLOSED"
+        assert "Scanner" in data["adapters"]
+        assert data["adapters"]["Scanner"]["state"] == "CLOSED"
 
     async def test_status_reflects_positions(self, client, risk):
         risk.record_trade(
             token_id="tok123",
-            game="CS2",
-            team="NAVI",
-            match_id="m1",
+            game="market",
+            team="Yes",
+            match_id="c1",
             amount_usdc=50.0,
             buy_price=0.60,
         )
@@ -103,8 +101,8 @@ class TestApiStatus:
         assert data["open_positions"] == 1
         assert data["total_exposure"] == 50.0
         assert len(data["positions"]) == 1
-        assert data["positions"][0]["game"] == "CS2"
-        assert data["positions"][0]["team"] == "NAVI"
+        assert data["positions"][0]["game"] == "market"
+        assert data["positions"][0]["team"] == "Yes"
 
     async def test_status_reflects_pnl(self, client, risk):
         risk.record_pnl(-25.0)
@@ -121,9 +119,7 @@ class TestApiStatus:
 
     async def test_status_reflects_cb_halt(self, client, cb):
         for _ in range(3):
-            cb.record_failure("CS2", "err")
-        for _ in range(3):
-            cb.record_failure("LoL", "err")
+            cb.record_failure("Scanner", "err")
         resp = await client.get("/api/status")
         data = await resp.json()
         assert data["circuit_breaker_halted"] is True
@@ -144,9 +140,9 @@ class TestApiTrades:
 
     async def test_trades_returns_recorded_trades(self, client, engine):
         engine._trades.append({
-            "game": "CS2",
-            "team": "NAVI",
-            "market": "Will NAVI win?",
+            "game": "market",
+            "team": "Yes",
+            "market": "Will X happen?",
             "ask_price": 0.65,
             "amount": 50.0,
             "latency_ms": 42.3,
@@ -157,14 +153,14 @@ class TestApiTrades:
         resp = await client.get("/api/trades")
         data = await resp.json()
         assert len(data) == 1
-        assert data[0]["game"] == "CS2"
-        assert data[0]["team"] == "NAVI"
+        assert data[0]["game"] == "market"
+        assert data[0]["team"] == "Yes"
         assert data[0]["latency_ms"] == 42.3
 
     async def test_trades_limit_parameter(self, client, engine):
         for i in range(10):
             engine._trades.append({
-                "game": "CS2", "team": f"Team{i}", "market": "q",
+                "game": "market", "team": f"Team{i}", "market": "q",
                 "ask_price": 0.5, "amount": 10.0, "latency_ms": 1.0,
                 "dry_run": True, "open_positions": i, "total_exposure": 10.0,
             })
@@ -174,12 +170,12 @@ class TestApiTrades:
 
     async def test_trades_most_recent_first(self, client, engine):
         engine._trades.append({
-            "game": "CS2", "team": "First", "market": "q",
+            "game": "market", "team": "First", "market": "q",
             "ask_price": 0.5, "amount": 10.0, "latency_ms": 1.0,
             "dry_run": True, "open_positions": 1, "total_exposure": 10.0,
         })
         engine._trades.append({
-            "game": "LoL", "team": "Last", "market": "q",
+            "game": "market", "team": "Last", "market": "q",
             "ask_price": 0.5, "amount": 10.0, "latency_ms": 1.0,
             "dry_run": True, "open_positions": 2, "total_exposure": 20.0,
         })
@@ -236,8 +232,6 @@ class TestBuildStatus:
         assert pos["buy_price"] == 0.70
 
     def test_build_status_adapter_info(self, risk, cb, engine):
-        cb.record_success("CS2")
-        cb.record_failure("LoL", "timeout")
+        cb.record_success("Scanner")
         status = _build_status(risk, cb, engine)
-        assert status["adapters"]["CS2"]["total_events"] == 1
-        assert status["adapters"]["LoL"]["total_failures"] == 1
+        assert status["adapters"]["Scanner"]["total_events"] == 1
