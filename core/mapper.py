@@ -1,8 +1,9 @@
 """
 Market Scheduler & Fuzzy Mapper
 
-Fetches active Polymarket esport markets, then maps incoming
-MatchEvent team names to the correct token IDs using rapidfuzz.
+Fetches active Polymarket esport markets via the Gamma API (primary)
+or CLOB get_markets (fallback), then maps incoming MatchEvent team names
+to the correct token IDs using rapidfuzz.
 """
 
 from __future__ import annotations
@@ -15,12 +16,12 @@ from typing import Any
 
 from rapidfuzz import fuzz, process
 
+from core.gamma_api import fetch_all_esport_markets
 from core.polymarket import polymarket
 
 log = logging.getLogger("polysniper.mapper")
 
 _ESPORT_KEYWORDS = [
-    "cs2", "counter-strike", "csgo",
     "league of legends", "lol", "worlds",
     "valorant", "vct", "champions tour",
     "dota", "the international",
@@ -64,45 +65,84 @@ class FuzzyMapper:
     async def refresh(self) -> None:
         """Fetch and index all active esport-related Polymarket markets."""
         async with self._lock:
-            try:
-                raw = await polymarket.get_markets()
-            except Exception as exc:
-                log.error("Failed to fetch markets: %s", exc)
-                return
-
-            markets_list = raw if isinstance(raw, list) else raw.get("data", [])
             self._markets.clear()
 
-            for m in markets_list:
-                question = m.get("question", "")
-                if not self._is_esport(question):
-                    continue
+            # -- Primary: Gamma API (direct esport tags) --
+            try:
+                gamma_markets = await fetch_all_esport_markets(limit_per_tag=50)
+                for m in gamma_markets:
+                    self._add_market_from_gamma(m)
+            except Exception as exc:
+                log.warning("Gamma API fetch failed: %s", exc)
 
-                tokens = m.get("tokens", [])
-                yes_token = next(
-                    (t for t in tokens if t.get("outcome", "").lower() == "yes"),
-                    None,
-                )
-                no_token = next(
-                    (t for t in tokens if t.get("outcome", "").lower() == "no"),
-                    None,
-                )
-                if not yes_token:
-                    continue
-
-                team = self._extract_team_from_question(question)
-                game_hint = self._detect_game(question)
-
-                self._markets.append(MarketMapping(
-                    condition_id=m.get("condition_id", ""),
-                    token_id_yes=yes_token.get("token_id", ""),
-                    token_id_no=no_token.get("token_id", "") if no_token else "",
-                    question=question,
-                    team_name=team,
-                    game_hint=game_hint,
-                ))
+            # -- Fallback: CLOB get_markets (keyword filter) --
+            if not self._markets:
+                try:
+                    raw = await polymarket.get_markets()
+                    markets_list = raw if isinstance(raw, list) else raw.get("data", [])
+                    for m in markets_list:
+                        question = m.get("question", "")
+                        if not self._is_esport(question):
+                            continue
+                        self._add_market_from_clob(m)
+                except Exception as exc:
+                    log.error("CLOB markets fetch failed: %s", exc)
 
             log.info("Indexed %d esport markets", len(self._markets))
+
+    def _add_market_from_gamma(self, m: dict[str, Any]) -> None:
+        """Parse a Gamma API market and add to index."""
+        question = m.get("question", "")
+        if not question:
+            return
+
+        clob_ids = m.get("clobTokenIds")
+        if not clob_ids or len(clob_ids) < 2:
+            return
+
+        outcomes = m.get("outcomes") or ["Yes", "No"]
+        yes_idx = next((i for i, o in enumerate(outcomes) if str(o).lower() == "yes"), 0)
+        token_yes = str(clob_ids[yes_idx])
+        token_no = str(clob_ids[1 - yes_idx]) if len(clob_ids) > 1 else ""
+
+        team = self._extract_team_from_question(question)
+        game_hint = self._detect_game(question)
+
+        self._markets.append(MarketMapping(
+            condition_id=m.get("conditionId", ""),
+            token_id_yes=token_yes,
+            token_id_no=token_no,
+            question=question,
+            team_name=team,
+            game_hint=game_hint,
+        ))
+
+    def _add_market_from_clob(self, m: dict[str, Any]) -> None:
+        """Parse a CLOB API market and add to index."""
+        tokens = m.get("tokens", [])
+        yes_token = next(
+            (t for t in tokens if t.get("outcome", "").lower() == "yes"),
+            None,
+        )
+        no_token = next(
+            (t for t in tokens if t.get("outcome", "").lower() == "no"),
+            None,
+        )
+        if not yes_token:
+            return
+
+        question = m.get("question", "")
+        team = self._extract_team_from_question(question)
+        game_hint = self._detect_game(question)
+
+        self._markets.append(MarketMapping(
+            condition_id=m.get("condition_id", ""),
+            token_id_yes=yes_token.get("token_id", ""),
+            token_id_no=no_token.get("token_id", "") if no_token else "",
+            question=question,
+            team_name=team,
+            game_hint=game_hint,
+        ))
 
     def find_token(self, team_won: str, game: str) -> MarketMapping | None:
         """
@@ -164,8 +204,6 @@ class FuzzyMapper:
     @staticmethod
     def _detect_game(question: str) -> str:
         q = question.lower()
-        if any(k in q for k in ("cs2", "counter-strike", "csgo")):
-            return "CS2"
         if any(k in q for k in ("league of legends", "lol", "worlds")):
             return "LoL"
         if any(k in q for k in ("valorant", "vct")):

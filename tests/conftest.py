@@ -70,7 +70,10 @@ def sample_markets():
 
 @pytest.fixture
 def mock_polymarket_get_markets(sample_markets):
-    """Patch polymarket.get_markets to return sample data."""
-    with patch("core.mapper.polymarket") as mock_pm:
+    """Patch Gamma API to return empty (so we use CLOB fallback), and polymarket.get_markets for sample data."""
+    with (
+        patch("core.mapper.fetch_all_esport_markets", new_callable=AsyncMock, return_value=[]),
+        patch("core.mapper.polymarket") as mock_pm,
+    ):
         mock_pm.get_markets = AsyncMock(return_value=sample_markets)
         yield mock_pm

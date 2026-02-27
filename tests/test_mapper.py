@@ -9,7 +9,6 @@ class TestIsEsport:
     @pytest.mark.parametrize(
         "question",
         [
-            "Will NAVI win CS2 Major?",
             "Will T1 win League of Legends Worlds?",
             "Will Sentinels win Valorant VCT?",
             "Will Spirit win Dota 2 The International?",
@@ -57,8 +56,6 @@ class TestDetectGame:
     @pytest.mark.parametrize(
         "question, expected",
         [
-            ("Will NAVI win CS2 Major?", "CS2"),
-            ("Counter-Strike 2 finals", "CS2"),
             ("Will T1 win League of Legends?", "LoL"),
             ("LoL Worlds 2026", "LoL"),
             ("Valorant VCT Champions", "Valorant"),
@@ -100,7 +97,7 @@ class TestFuzzyMapperRefreshAndFind:
     async def test_refresh_indexes_esport_markets(self, mock_polymarket_get_markets):
         fm = FuzzyMapper()
         await fm.refresh()
-        assert len(fm._markets) == 4  # 4 esport + 1 politics filtered out
+        assert len(fm._markets) == 3  # 3 esport (LoL, Valorant, Dota2) + 1 politics + 1 CS2 filtered out
 
     @pytest.mark.asyncio
     async def test_refresh_skips_non_esport(self, mock_polymarket_get_markets):
@@ -113,17 +110,17 @@ class TestFuzzyMapperRefreshAndFind:
     async def test_find_token_exact_name(self, mock_polymarket_get_markets):
         fm = FuzzyMapper()
         await fm.refresh()
-        result = fm.find_token("Natus Vincere", "CS2")
+        result = fm.find_token("T1", "LoL")
         assert result is not None
-        assert result.token_id_yes == "tok_yes_navi"
+        assert result.token_id_yes == "tok_yes_t1"
 
     @pytest.mark.asyncio
     async def test_find_token_alias(self, mock_polymarket_get_markets):
         fm = FuzzyMapper()
         await fm.refresh()
-        result = fm.find_token("NAVI", "CS2")
+        result = fm.find_token("SKT", "LoL")
         assert result is not None
-        assert result.token_id_yes == "tok_yes_navi"
+        assert result.token_id_yes == "tok_yes_t1"
 
     @pytest.mark.asyncio
     async def test_find_token_cross_game(self, mock_polymarket_get_markets):
@@ -137,7 +134,7 @@ class TestFuzzyMapperRefreshAndFind:
     async def test_find_token_no_match(self, mock_polymarket_get_markets):
         fm = FuzzyMapper()
         await fm.refresh()
-        result = fm.find_token("Totally Unknown Team XYZ", "CS2")
+        result = fm.find_token("Totally Unknown Team XYZ", "LoL")
         assert result is None
 
     @pytest.mark.asyncio
@@ -168,8 +165,11 @@ class TestFuzzyMapperRefreshAndFind:
     async def test_empty_markets(self):
         from unittest.mock import AsyncMock, patch
 
-        with patch("core.mapper.polymarket") as mock_pm:
+        with (
+            patch("core.mapper.fetch_all_esport_markets", new_callable=AsyncMock, return_value=[]),
+            patch("core.mapper.polymarket") as mock_pm,
+        ):
             mock_pm.get_markets = AsyncMock(return_value=[])
             fm = FuzzyMapper()
             await fm.refresh()
-            assert fm.find_token("NAVI", "CS2") is None
+            assert fm.find_token("NAVI", "LoL") is None

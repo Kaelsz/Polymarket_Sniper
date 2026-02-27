@@ -1,8 +1,9 @@
 """
 PolySniper v1.0 — Entry Point
 
-Launches all 4 esport adapters concurrently + the sniper execution engine,
-with integrated risk management, circuit breaker, and state persistence.
+Launches 3 esport adapters (LoL, Valorant, Dota2) concurrently + the sniper
+execution engine, with integrated risk management, circuit breaker, and state
+persistence.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from adapters.base import MatchEvent
-from adapters.cs2_adapter import CS2Adapter
 from adapters.dota2_adapter import Dota2Adapter
 from adapters.lol_adapter import LoLAdapter
 from adapters.valorant_adapter import ValorantAdapter
@@ -143,7 +143,6 @@ async def main() -> None:
     event_queue: asyncio.Queue[MatchEvent] = asyncio.Queue()
 
     adapters = [
-        CS2Adapter(event_queue, circuit_breaker=cb),
         LoLAdapter(event_queue, circuit_breaker=cb),
         ValorantAdapter(event_queue, circuit_breaker=cb),
         Dota2Adapter(event_queue, circuit_breaker=cb),

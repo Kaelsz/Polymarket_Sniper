@@ -33,16 +33,16 @@ from core.risk import RiskConfig, RiskManager
 # ---------------------------------------------------------------------------
 FAKE_MARKETS = [
     {
-        "condition_id": "cond_navi_cs2",
-        "question": "Will Natus Vincere win CS2 IEM Katowice?",
+        "condition_id": "cond_navi_lol",
+        "question": "Will Natus Vincere win LoL Worlds Play-In?",
         "tokens": [
             {"token_id": "tok_navi_yes", "outcome": "Yes"},
             {"token_id": "tok_navi_no", "outcome": "No"},
         ],
     },
     {
-        "condition_id": "cond_g2_cs2",
-        "question": "Will G2 Esports win CS2 IEM Katowice?",
+        "condition_id": "cond_g2_lol",
+        "question": "Will G2 Esports win League of Legends LEC?",
         "tokens": [
             {"token_id": "tok_g2_yes", "outcome": "Yes"},
             {"token_id": "tok_g2_no", "outcome": "No"},
@@ -73,8 +73,8 @@ FAKE_MARKETS = [
         ],
     },
     {
-        "condition_id": "cond_liquid_cs2",
-        "question": "Will Team Liquid win CS2 BLAST Premier?",
+        "condition_id": "cond_liquid_val",
+        "question": "Will Team Liquid win Valorant VCT EMEA?",
         "tokens": [
             {"token_id": "tok_liquid_yes", "outcome": "Yes"},
             {"token_id": "tok_liquid_no", "outcome": "No"},
@@ -104,8 +104,10 @@ async def loaded_mapper(fake_polymarket):
     fm = FuzzyMapper()
     with patch.object(fm, "_FuzzyMapper__class__", None, create=True):
         pass
-    # Patch the polymarket dependency inside mapper to return fake data
-    with patch("core.mapper.polymarket", fake_polymarket):
+    with (
+        patch("core.mapper.fetch_all_esport_markets", new_callable=AsyncMock, return_value=[]),
+        patch("core.mapper.polymarket", fake_polymarket),
+    ):
         await fm.refresh()
     assert len(fm._markets) == 6
     return fm
@@ -888,7 +890,7 @@ class TestApiResolutionIntegration:
         )
         assert risk.open_positions == 1
         pos = risk._positions[0]
-        assert pos.condition_id == "cond_navi_cs2"
+        assert pos.condition_id == "cond_navi_lol"
 
         mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
         await engine._check_position_resolutions()
