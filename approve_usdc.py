@@ -7,8 +7,26 @@ import os
 import json
 from web3 import Web3
 
-RPC = "https://rpc.ankr.com/polygon"
-w3 = Web3(Web3.HTTPProvider(RPC))
+RPCS = [
+    "https://polygon-bor-rpc.publicnode.com",
+    "https://1rpc.io/matic",
+    "https://polygon.meowrpc.com",
+]
+
+w3 = None
+for rpc in RPCS:
+    try:
+        _w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+        _w3.eth.chain_id
+        w3 = _w3
+        print(f"Connected to {rpc}")
+        break
+    except Exception:
+        continue
+
+if w3 is None:
+    print("ERROR: No working RPC found")
+    exit(1)
 
 PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY")
 WALLET = Web3.to_checksum_address(os.getenv("POLYMARKET_ADDRESS"))
