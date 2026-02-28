@@ -132,8 +132,8 @@ class PolymarketClient:
         loop = asyncio.get_running_loop()
         order_args = OrderArgs(
             token_id=token_id,
-            amount=amount,
-            price=1.0,  # market buy: willing to pay up to $1
+            size=amount,
+            price=1.0,
             side="BUY",
         )
         signed = await loop.run_in_executor(
@@ -157,7 +157,7 @@ class PolymarketClient:
         loop = asyncio.get_running_loop()
         order_args = OrderArgs(
             token_id=token_id,
-            amount=shares,
+            size=shares,
             price=0.001,
             side="SELL",
         )
