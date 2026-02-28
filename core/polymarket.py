@@ -111,7 +111,7 @@ class PolymarketClient:
         )
         return resp
 
-    async def get_order_book(self, token_id: str) -> dict:
+    async def get_order_book(self, token_id: str) -> Any:
         await self._throttle()
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
@@ -169,12 +169,13 @@ class PolymarketClient:
         return signed
 
     async def best_ask(self, token_id: str) -> float | None:
-        """Return the lowest ask price for a YES token, or None if empty."""
+        """Return the lowest ask price for a token, or None if empty."""
         book = await self.get_order_book(token_id)
-        asks = book.get("asks", [])
+        asks = getattr(book, "asks", None) or (book.get("asks", []) if isinstance(book, dict) else [])
         if not asks:
             return None
-        return float(min(asks, key=lambda a: float(a["price"]))["price"])
+        best = min(asks, key=lambda a: float(a.price if hasattr(a, "price") else a["price"]))
+        return float(best.price if hasattr(best, "price") else best["price"])
 
     async def get_market_resolution(self, condition_id: str) -> str | None:
         """
