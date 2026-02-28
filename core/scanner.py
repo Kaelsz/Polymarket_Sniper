@@ -76,12 +76,12 @@ class MarketScanner:
         self._running = True
         self._session = aiohttp.ClientSession(headers=_HEADERS)
         log.info(
-            "Scanner started — interval=%ds, volume>=$%.0fK, price=[%.2f–%.2f], end<=%.0f days",
+            "Scanner started — interval=%ds, volume>=$%.0fK, price=[%.2f–%.2f], end<=%.0fh",
             self._scan_interval,
             self._min_volume / 1000,
             settings.trading.min_buy_price,
             settings.trading.max_buy_price,
-            settings.trading.max_end_days,
+            settings.trading.max_end_hours,
         )
         try:
             while self._running:
@@ -213,7 +213,7 @@ class MarketScanner:
         min_price = settings.trading.min_buy_price
         max_price = settings.trading.max_buy_price
         now = datetime.now(timezone.utc)
-        max_end_seconds = settings.trading.max_end_days * 86400
+        max_end_seconds = settings.trading.max_end_hours * 3600
 
         for m in markets:
             volume = float(m.get("volume", 0) or 0)

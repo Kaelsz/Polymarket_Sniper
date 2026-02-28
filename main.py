@@ -114,7 +114,7 @@ async def main() -> None:
     log.info("  Dry run: %s", cfg.dry_run)
     log.info("  Buy price window: $%.2f–$%.2f", cfg.min_buy_price, cfg.max_buy_price)
     log.info("  Min volume: $%.0fK", cfg.min_volume_usdc / 1000)
-    log.info("  Max end date: %.0f days", cfg.max_end_days)
+    log.info("  Max end date: %.0fh", cfg.max_end_hours)
     log.info("  Scan interval: %ds", cfg.scanner_interval)
     log.info("  Order sizing: %s (base=$%.2f, range=$%.2f–$%.2f)",
              cfg.sizing_mode, cfg.order_size_usdc, cfg.min_order_usdc, cfg.max_order_usdc)

@@ -118,8 +118,8 @@ class TradingConfig:
     min_volume_usdc: float = field(
         default_factory=lambda: float(os.getenv("MIN_VOLUME_USDC", "100000.0"))
     )
-    max_end_days: float = field(
-        default_factory=lambda: float(os.getenv("MAX_END_DAYS", "7.0"))
+    max_end_hours: float = field(
+        default_factory=lambda: float(os.getenv("MAX_END_HOURS", "2.0"))
     )
     api_rate_limit: float = field(
         default_factory=lambda: float(os.getenv("API_RATE_LIMIT", "5.0"))
@@ -232,8 +232,8 @@ def validate_config(s: Settings) -> list[str]:
         errors.append(f"SCANNER_INTERVAL must be > 0: got {t.scanner_interval}")
     if t.min_volume_usdc < 0:
         errors.append(f"MIN_VOLUME_USDC must be >= 0: got {t.min_volume_usdc}")
-    if t.max_end_days <= 0:
-        errors.append(f"MAX_END_DAYS must be > 0: got {t.max_end_days}")
+    if t.max_end_hours <= 0:
+        errors.append(f"MAX_END_HOURS must be > 0: got {t.max_end_hours}")
 
     # -- Rate limiting --
     if t.api_rate_limit <= 0:
