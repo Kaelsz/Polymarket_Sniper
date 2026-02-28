@@ -239,6 +239,12 @@ class RiskManager:
         log.critical("RISK  TRADING HALTED: %s", reason)
 
     def _check_dedup(self, token_id: str, match_id: str, team: str) -> str:
+        if any(p.token_id == token_id for p in self._positions):
+            return f"Already holding position on token {token_id[:16]}"
+
+        if any(p.match_id == match_id for p in self._positions):
+            return f"Already holding position on market {match_id[:16]}"
+
         key = self._dedup_key(token_id, match_id, team)
         last_trade = self._trade_keys.get(key)
         if last_trade is None:

@@ -35,23 +35,25 @@ class TestPreTradeCheckBasic:
 
 
 class TestDedup:
-    def test_blocks_duplicate_token_match_team(self):
+    def test_blocks_duplicate_token_while_open(self):
         rm = RiskManager(_cfg())
         rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
         decision = rm.pre_trade_check("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
         assert not decision
-        assert "Duplicate" in decision.reason
+        assert "already holding" in decision.reason.lower()
 
-    def test_allows_same_token_different_team(self):
+    def test_blocks_same_market_while_open(self):
         rm = RiskManager(_cfg(match_cooldown_seconds=0.0))
         rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
         rm._match_cooldowns["m1"] = time.time() - 1.0
-        decision = rm.pre_trade_check("tok1", "CS2", "G2", "m1", 50.0, 0.55)
-        assert decision
+        decision = rm.pre_trade_check("tok2", "CS2", "G2", "m1", 50.0, 0.55)
+        assert not decision
+        assert "already holding" in decision.reason.lower()
 
-    def test_allows_after_dedup_window(self):
+    def test_allows_after_position_closed(self):
         rm = RiskManager(_cfg(dedup_window_seconds=0.0, match_cooldown_seconds=0.0))
         rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
+        rm.close_position("tok1")
         rm._trade_keys["tok1|m1|navi"] = time.time() - 1.0
         rm._match_cooldowns["m1"] = time.time() - 1.0
         decision = rm.pre_trade_check("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
@@ -59,12 +61,11 @@ class TestDedup:
 
 
 class TestCooldown:
-    def test_blocks_same_match_within_cooldown(self):
+    def test_blocks_same_match_while_position_open(self):
         rm = RiskManager(_cfg(match_cooldown_seconds=10.0))
         rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
         decision = rm.pre_trade_check("tok2", "CS2", "G2", "m1", 50.0, 0.55)
         assert not decision
-        assert "cooldown" in decision.reason.lower()
 
     def test_allows_different_match(self):
         rm = RiskManager(_cfg(match_cooldown_seconds=10.0))
@@ -72,9 +73,18 @@ class TestCooldown:
         decision = rm.pre_trade_check("tok2", "CS2", "G2", "m2", 50.0, 0.55)
         assert decision
 
-    def test_allows_after_cooldown_expires(self):
+    def test_blocks_same_match_in_cooldown_after_close(self):
+        rm = RiskManager(_cfg(match_cooldown_seconds=9999.0))
+        rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
+        rm.close_position("tok1")
+        decision = rm.pre_trade_check("tok2", "CS2", "G2", "m1", 50.0, 0.55)
+        assert not decision
+        assert "cooldown" in decision.reason.lower()
+
+    def test_allows_after_cooldown_and_close(self):
         rm = RiskManager(_cfg(match_cooldown_seconds=0.0))
         rm.record_trade("tok1", "CS2", "NAVI", "m1", 50.0, 0.60)
+        rm.close_position("tok1")
         rm._match_cooldowns["m1"] = time.time() - 1.0
         decision = rm.pre_trade_check("tok2", "CS2", "G2", "m1", 50.0, 0.55)
         assert decision
