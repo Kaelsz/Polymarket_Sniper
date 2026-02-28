@@ -48,14 +48,13 @@ class PolymarketClient:
             # -- Method 1: Manual API credentials (recommended for bots) --
             if cfg.has_api_creds:
                 try:
-                    api_secret = cfg.api_secret
-                    pad_missing = len(api_secret) % 4
-                    if pad_missing:
-                        api_secret += "=" * (4 - pad_missing)
+                    secret = cfg.api_secret
+                    if len(secret) % 4:
+                        secret += "=" * (4 - len(secret) % 4)
 
                     creds = ApiCreds(
                         api_key=cfg.api_key,
-                        api_secret=api_secret,
+                        api_secret=secret,
                         api_passphrase=cfg.api_passphrase,
                     )
                     await loop.run_in_executor(
