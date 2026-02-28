@@ -7,7 +7,7 @@ import os
 import json
 from web3 import Web3
 
-RPC = "https://polygon.llamarpc.com"
+RPC = "https://rpc.ankr.com/polygon"
 w3 = Web3(Web3.HTTPProvider(RPC))
 
 PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY")
