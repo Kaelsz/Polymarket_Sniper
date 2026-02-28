@@ -1,7 +1,7 @@
 """
 Sniper Execution Engine
 
-Consumes Opportunity objects from the scanner queue, re-verifies
+Consumes Opportunity objects from the scanner queue, verifies
 prices on the CLOB, enforces risk limits, and fires market-buy orders.
 
 Includes:
@@ -9,6 +9,7 @@ Includes:
   - Error handling on market_buy (no record if order fails)
   - Position monitor: official API resolution + price-based fallback
   - Optional state persistence after every trade / resolution
+  - Scanner callback: clears _seen on rejection so tokens can be retried
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from core.circuit_breaker import CircuitBreaker
 from core.config import settings
@@ -44,6 +45,7 @@ class SniperEngine:
         circuit_breaker: CircuitBreaker | None = None,
         state_store: StateStore | None = None,
         sizer: OrderSizer | None = None,
+        on_reject: Callable[[str], None] | None = None,
     ) -> None:
         self._queue = queue
         self._risk = risk or RiskManager()
@@ -52,6 +54,7 @@ class SniperEngine:
         self._trade_lock = asyncio.Lock()
         self._state_store = state_store
         self._sizer = sizer or OrderSizer()
+        self._on_reject = on_reject
 
     async def run(self) -> None:
         log.info("Sniper engine started — waiting for opportunities...")
@@ -67,38 +70,54 @@ class SniperEngine:
             self._save_state()
             log.info("Sniper engine stopped.")
 
+    def _reject(self, token_id: str) -> None:
+        """Notify the scanner that a token was rejected so it can be retried."""
+        if self._on_reject:
+            self._on_reject(token_id)
+
     async def _handle_opportunity(self, opp: Opportunity) -> None:
         t0 = time.perf_counter()
         log.info(
-            "SIGNAL  %s @ $%.4f | %s | vol=$%.0fK",
+            "SIGNAL  %s @ $%.4f (gamma) | %s | vol=$%.0fK",
             opp.outcome, opp.ask_price, opp.question[:60], opp.volume / 1000,
         )
 
         if self._cb and self._cb.is_halted:
             log.warning("BLOCKED by circuit breaker — skipping")
+            self._reject(opp.token_id)
             return
 
         if self._risk.halted:
             log.warning("BLOCKED by risk manager (%s) — skipping", self._risk.halt_reason)
+            self._reject(opp.token_id)
             return
 
-        ask = await polymarket.best_ask(opp.token_id)
+        try:
+            ask = await polymarket.best_ask(opp.token_id)
+        except Exception as exc:
+            log.warning("CLOB error for token %s: %s", opp.token_id[:12], exc)
+            self._reject(opp.token_id)
+            return
+
         if ask is None:
             log.warning("Empty order book for token %s", opp.token_id[:12])
+            self._reject(opp.token_id)
             return
 
         if ask < settings.trading.min_buy_price:
             log.info(
-                "SKIP  ask=$%.4f < min=$%.2f for '%s' (market not confirmed)",
+                "SKIP  CLOB ask=$%.4f < min=$%.2f for '%s'",
                 ask, settings.trading.min_buy_price, opp.question[:60],
             )
+            self._reject(opp.token_id)
             return
 
         if ask > settings.trading.max_buy_price:
             log.info(
-                "SKIP  ask=$%.4f > max=$%.2f for '%s' (no margin left)",
+                "SKIP  CLOB ask=$%.4f > max=$%.2f for '%s'",
                 ask, settings.trading.max_buy_price, opp.question[:60],
             )
+            self._reject(opp.token_id)
             return
 
         amount = self._sizer.compute(
@@ -132,6 +151,7 @@ class SniperEngine:
                     f"Token: {opp.token_id[:16]}\n"
                     f"Error: {exc}"
                 )
+                self._reject(opp.token_id)
                 return
 
             self._risk.record_trade(

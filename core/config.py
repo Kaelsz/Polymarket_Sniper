@@ -119,7 +119,7 @@ class TradingConfig:
         default_factory=lambda: float(os.getenv("MIN_VOLUME_USDC", "100000.0"))
     )
     max_end_hours: float = field(
-        default_factory=lambda: float(os.getenv("MAX_END_HOURS", "2.0"))
+        default_factory=lambda: float(os.getenv("MAX_END_HOURS", "24.0"))
     )
     api_rate_limit: float = field(
         default_factory=lambda: float(os.getenv("API_RATE_LIMIT", "5.0"))

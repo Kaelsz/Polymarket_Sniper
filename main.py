@@ -153,7 +153,11 @@ async def main() -> None:
         kelly_win_prob=cfg.kelly_win_prob,
     ))
 
-    engine = SniperEngine(opp_queue, risk=risk, circuit_breaker=cb, state_store=state_store, sizer=sizer)
+    engine = SniperEngine(
+        opp_queue, risk=risk, circuit_breaker=cb,
+        state_store=state_store, sizer=sizer,
+        on_reject=scanner.clear_seen,
+    )
 
     dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port, limiter=limiter)
 

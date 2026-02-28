@@ -1,8 +1,8 @@
 """
 Market Scanner — Monitors all Polymarket markets for near-resolution opportunities.
 
-Polls the Gamma API for active markets, pre-filters by volume and price,
-verifies ask prices on the CLOB order book, and feeds opportunities to the engine.
+Polls the Gamma API for active markets, pre-filters by volume / end-date /
+indicative price, and feeds opportunities to the engine for CLOB verification.
 """
 
 from __future__ import annotations
@@ -17,12 +17,13 @@ from datetime import datetime, timezone
 import aiohttp
 
 from core.config import settings
-from core.polymarket import polymarket
 
 log = logging.getLogger("polysniper.scanner")
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 _HEADERS = {"User-Agent": "PolySniper/2.0"}
+
+_SEEN_TTL_SECONDS: float = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,12 +57,13 @@ class MarketScanner:
         self._cb = circuit_breaker
         self._scan_interval = scan_interval or settings.trading.scanner_interval
         self._min_volume = min_volume or settings.trading.min_volume_usdc
-        self._seen: set[str] = set()
+        self._seen: dict[str, float] = {}
         self._session: aiohttp.ClientSession | None = None
         self._running = False
         self._last_scan_markets = 0
         self._last_scan_candidates = 0
         self._total_opportunities = 0
+        self._cycle_count = 0
 
     @property
     def stats(self) -> dict:
@@ -107,8 +109,19 @@ class MarketScanner:
         if self._cb and hasattr(self._cb, "record_failure"):
             self._cb.record_failure(self.GAME, error)
 
+    def _expire_seen(self) -> None:
+        """Remove tokens from _seen whose TTL has expired."""
+        now = time.monotonic()
+        expired = [tid for tid, ts in self._seen.items() if now - ts > _SEEN_TTL_SECONDS]
+        for tid in expired:
+            del self._seen[tid]
+
     async def _scan_cycle(self) -> None:
+        self._cycle_count += 1
         t0 = time.perf_counter()
+
+        self._expire_seen()
+
         markets = await self._fetch_markets()
         self._last_scan_markets = len(markets)
 
@@ -116,20 +129,11 @@ class MarketScanner:
         self._last_scan_candidates = len(candidates)
 
         new_opps = 0
+        skipped_seen = 0
         for cand in candidates:
             token_id = cand["token_id"]
             if token_id in self._seen:
-                continue
-
-            try:
-                ask = await polymarket.best_ask(token_id)
-            except Exception:
-                continue
-
-            if ask is None:
-                continue
-
-            if not (settings.trading.min_buy_price <= ask <= settings.trading.max_buy_price):
+                skipped_seen += 1
                 continue
 
             opp = Opportunity(
@@ -137,31 +141,27 @@ class MarketScanner:
                 token_id=token_id,
                 question=cand["question"],
                 outcome=cand["outcome"],
-                ask_price=ask,
+                ask_price=cand["price"],
                 volume=cand["volume"],
                 end_date=cand.get("end_date", ""),
                 market_slug=cand.get("slug", ""),
             )
-            self._seen.add(token_id)
+            self._seen[token_id] = time.monotonic()
             self._total_opportunities += 1
             await self._queue.put(opp)
             new_opps += 1
             log.info(
-                "OPPORTUNITY  %s @ $%.4f | %s | vol=$%.0fK",
-                opp.outcome, opp.ask_price, opp.question[:80], opp.volume / 1000,
+                "OPPORTUNITY  %s @ $%.4f | %s | vol=$%.0fK | ends=%s",
+                opp.outcome, opp.ask_price, opp.question[:70],
+                opp.volume / 1000, cand.get("end_date", "?")[:16],
             )
 
         elapsed = (time.perf_counter() - t0) * 1000
-        if new_opps:
-            log.info(
-                "Scan: %d markets, %d candidates, %d new opportunities (%.0fms)",
-                len(markets), len(candidates), new_opps, elapsed,
-            )
-        else:
-            log.debug(
-                "Scan: %d markets, %d candidates, 0 new (%.0fms)",
-                len(markets), len(candidates), elapsed,
-            )
+        log.info(
+            "Scan #%d: %d markets, %d candidates, %d new, %d cooldown (%.0fms)",
+            self._cycle_count, len(markets), len(candidates),
+            new_opps, skipped_seen, elapsed,
+        )
 
     async def _fetch_markets(self) -> list[dict]:
         """Fetch all active markets from Gamma API with pagination."""
@@ -268,5 +268,5 @@ class MarketScanner:
         return candidates
 
     def clear_seen(self, token_id: str) -> None:
-        """Remove a token from the seen set (e.g., after position closed)."""
-        self._seen.discard(token_id)
+        """Remove a token from the seen set so it can be re-evaluated."""
+        self._seen.pop(token_id, None)
