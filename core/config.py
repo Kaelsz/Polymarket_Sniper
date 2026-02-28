@@ -34,6 +34,10 @@ class PolymarketConfig:
     api_key: str = field(default_factory=lambda: os.getenv("POLY_API_KEY", ""))
     api_secret: str = field(default_factory=lambda: os.getenv("POLY_API_SECRET", ""))
     api_passphrase: str = field(default_factory=lambda: os.getenv("POLY_API_PASSPHRASE", ""))
+    funder: str = field(default_factory=lambda: os.getenv("POLY_FUNDER", ""))
+    signature_type: int = field(
+        default_factory=lambda: int(os.getenv("POLY_SIGNATURE_TYPE", "0"))
+    )
 
     @property
     def has_api_creds(self) -> bool:
