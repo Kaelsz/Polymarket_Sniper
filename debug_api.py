@@ -22,9 +22,12 @@ def check_env():
     print(f"PASSPHRASE    = {passphrase!r}")
     print()
     print(f"SECRET len={len(secret)}, mod4={len(secret) % 4}")
-    print(f"SECRET starts with quotes? {'YES - BAD!' if secret.startswith('\"') else 'No - OK'}")
-    print(f"SECRET has spaces? {'YES - BAD!' if ' ' in secret else 'No - OK'}")
-    print(f"SECRET has newline? {'YES - BAD!' if chr(10) in secret or chr(13) in secret else 'No - OK'}")
+    has_quotes = secret.startswith('"')
+    has_spaces = " " in secret
+    has_newline = "\n" in secret or "\r" in secret
+    print("SECRET starts with quotes?", "YES - BAD!" if has_quotes else "No - OK")
+    print("SECRET has spaces?", "YES - BAD!" if has_spaces else "No - OK")
+    print("SECRET has newline?", "YES - BAD!" if has_newline else "No - OK")
 
     expected_key = "019ca62c-18fb-7eef-b780-09a2afcb341e"
     expected_secret = "EWuvxJAcKqBnxkYyUE6csTyIzdwOoLeZg4KSr7-rcT0="
