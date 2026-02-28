@@ -10,9 +10,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
@@ -247,6 +248,9 @@ class MarketScanner:
             slug = m.get("slug", "")
             end_date = m.get("endDate", "") or m.get("end_date_iso", "") or ""
 
+            if not self._question_date_ok(question, max_end_seconds / 3600):
+                continue
+
             for price_s, tid, outcome in zip(prices, token_ids, outcomes):
                 try:
                     price = float(price_s)
@@ -270,3 +274,66 @@ class MarketScanner:
     def clear_seen(self, token_id: str) -> None:
         """Remove a token from the seen set so it can be re-evaluated."""
         self._seen.pop(token_id, None)
+
+    # ------------------------------------------------------------------
+    # Date extraction from question text
+    # ------------------------------------------------------------------
+
+    _MONTH_MAP: dict[str, int] = {
+        "january": 1, "jan": 1, "february": 2, "feb": 2,
+        "march": 3, "mar": 3, "april": 4, "apr": 4,
+        "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+        "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+        "october": 10, "oct": 10, "november": 11, "nov": 11,
+        "december": 12, "dec": 12,
+    }
+
+    _DATE_PATTERNS: list[re.Pattern[str]] = [
+        re.compile(
+            r"(?:on|by|before|after|in)\s+"
+            r"(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(\w+)(?:\s*,?\s*(\d{4}))?",
+            re.IGNORECASE,
+        ),
+    ]
+
+    @classmethod
+    def _extract_event_date(cls, question: str) -> datetime | None:
+        """Try to extract an event date from a market question."""
+        now = datetime.now(timezone.utc)
+
+        for pat in cls._DATE_PATTERNS:
+            for m in pat.finditer(question):
+                groups = m.groups()
+                if pat == cls._DATE_PATTERNS[0]:
+                    month_str, day_str, year_str = groups
+                else:
+                    day_str, month_str, year_str = groups
+
+                month = cls._MONTH_MAP.get(month_str.lower())
+                if month is None:
+                    continue
+                try:
+                    day = int(day_str)
+                    year = int(year_str) if year_str else now.year
+                    dt = datetime(year, month, day, tzinfo=timezone.utc)
+                    if dt < now and not year_str:
+                        dt = dt.replace(year=now.year + 1)
+                    return dt
+                except (ValueError, OverflowError):
+                    continue
+
+        return None
+
+    @classmethod
+    def _question_date_ok(cls, question: str, max_hours: float) -> bool:
+        """Return True if no date found in question OR date is within max_hours."""
+        event_dt = cls._extract_event_date(question)
+        if event_dt is None:
+            return True
+        now = datetime.now(timezone.utc)
+        hours_until = (event_dt - now).total_seconds() / 3600
+        return hours_until <= max_hours
