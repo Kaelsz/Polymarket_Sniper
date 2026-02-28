@@ -133,7 +133,7 @@ class PolymarketClient:
         order_args = OrderArgs(
             token_id=token_id,
             size=amount,
-            price=1.0,
+            price=0.999,
             side="BUY",
         )
         signed = await loop.run_in_executor(
