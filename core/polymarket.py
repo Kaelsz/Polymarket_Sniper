@@ -35,13 +35,24 @@ class PolymarketClient:
                 return
             cfg = settings.poly
             loop = asyncio.get_running_loop()
-            self._client = await loop.run_in_executor(
-                None,
-                lambda: ClobClient(
-                    cfg.host,
-                    key=cfg.private_key,
-                    chain_id=137,  # Polygon mainnet
-                ),
+            funder = cfg.funder or cfg.address
+            sig_type = cfg.signature_type
+
+            def _build_client() -> ClobClient:
+                kwargs: dict = {
+                    "key": cfg.private_key,
+                    "chain_id": 137,
+                }
+                if sig_type != 0:
+                    kwargs["signature_type"] = sig_type
+                if funder:
+                    kwargs["funder"] = funder
+                return ClobClient(cfg.host, **kwargs)
+
+            self._client = await loop.run_in_executor(None, _build_client)
+            log.info(
+                "ClobClient built: signature_type=%d, funder=%s",
+                sig_type, funder[:10] + "..." if funder else "None",
             )
             self._api_ready = False
 

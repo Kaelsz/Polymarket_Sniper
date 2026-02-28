@@ -1,4 +1,4 @@
-"""Run on VPS to diagnose API auth issues."""
+"""Run on VPS to diagnose API auth and balance issues."""
 
 import asyncio
 import os
@@ -15,34 +15,25 @@ def check_env():
     secret = os.getenv("POLY_API_SECRET", "")
     passphrase = os.getenv("POLY_API_PASSPHRASE", "")
     dry = os.getenv("DRY_RUN", "NOT SET")
+    sig_type = os.getenv("POLY_SIGNATURE_TYPE", "0")
+    funder = os.getenv("POLY_FUNDER", "NOT SET")
+    address = os.getenv("POLYMARKET_ADDRESS", "NOT SET")
 
-    print(f"DRY_RUN       = {dry!r}")
-    print(f"API_KEY       = {key!r}")
-    print(f"API_SECRET    = {secret!r}")
-    print(f"PASSPHRASE    = {passphrase!r}")
+    print(f"DRY_RUN            = {dry!r}")
+    print(f"POLYMARKET_ADDRESS = {address!r}")
+    print(f"POLY_FUNDER        = {funder!r}")
+    print(f"POLY_SIGNATURE_TYPE= {sig_type!r}")
+    print(f"API_KEY            = {key!r}")
+    print(f"API_SECRET         = {secret!r}")
+    print(f"PASSPHRASE         = {passphrase!r}")
     print()
     print(f"SECRET len={len(secret)}, mod4={len(secret) % 4}")
-    has_quotes = secret.startswith('"')
-    has_spaces = " " in secret
-    has_newline = "\n" in secret or "\r" in secret
-    print("SECRET starts with quotes?", "YES - BAD!" if has_quotes else "No - OK")
-    print("SECRET has spaces?", "YES - BAD!" if has_spaces else "No - OK")
-    print("SECRET has newline?", "YES - BAD!" if has_newline else "No - OK")
-
-    expected_key = "019ca62c-18fb-7eef-b780-09a2afcb341e"
-    expected_secret = "EWuvxJAcKqBnxkYyUE6csTyIzdwOoLeZg4KSr7-rcT0="
-    expected_pass = "6ba31ba30412e58483e4d38344c522c18078458ab2df20dceafd5e337fc8030c"
-
-    print()
-    print(f"KEY match?    {'OK' if key == expected_key else 'MISMATCH! got ' + repr(key)}")
-    print(f"SECRET match? {'OK' if secret == expected_secret else 'MISMATCH! got ' + repr(secret)}")
-    print(f"PASS match?   {'OK' if passphrase == expected_pass else 'MISMATCH! got ' + repr(passphrase)}")
 
     try:
         base64.urlsafe_b64decode(secret)
-        print(f"\nBase64 decode: OK")
+        print(f"Base64 decode: OK")
     except Exception as e:
-        print(f"\nBase64 decode: FAIL - {e}")
+        print(f"Base64 decode: FAIL - {e}")
 
 
 async def test_api():
@@ -83,6 +74,9 @@ async def test_api():
             print("    >>> AUTH FAILED - credentials mismatch")
         elif "403" in str(e):
             print("    >>> AUTH OK but geo-blocked (expected on some servers)")
+        elif "balance" in str(e).lower() or "allowance" in str(e).lower():
+            print("    >>> Auth OK, but balance/allowance issue")
+            print("    >>> Try changing POLY_SIGNATURE_TYPE and POLY_FUNDER in .env")
         else:
             print("    >>> Auth likely OK (error is not 401)")
 
