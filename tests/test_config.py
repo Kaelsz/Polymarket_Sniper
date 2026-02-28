@@ -26,6 +26,7 @@ def _valid_settings(**overrides) -> Settings:
         "max_buy_price": 0.85,
         "scanner_interval": 30.0,
         "min_volume_usdc": 100000.0,
+        "max_end_days": 7.0,
         "order_size_usdc": 50.0,
         "dry_run": True,
         "max_open_positions": 10,

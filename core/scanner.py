@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -75,11 +76,12 @@ class MarketScanner:
         self._running = True
         self._session = aiohttp.ClientSession(headers=_HEADERS)
         log.info(
-            "Scanner started — interval=%ds, min_volume=$%.0fK, price=[%.2f–%.2f]",
+            "Scanner started — interval=%ds, volume>=$%.0fK, price=[%.2f–%.2f], end<=%.0f days",
             self._scan_interval,
             self._min_volume / 1000,
             settings.trading.min_buy_price,
             settings.trading.max_buy_price,
+            settings.trading.max_end_days,
         )
         try:
             while self._running:
@@ -194,15 +196,36 @@ class MarketScanner:
 
         return all_markets
 
+    @staticmethod
+    def _parse_end_date(raw: str) -> datetime | None:
+        """Parse an ISO end date string from Gamma API."""
+        if not raw:
+            return None
+        try:
+            raw = raw.replace("Z", "+00:00")
+            return datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            return None
+
     def _pre_filter(self, markets: list[dict]) -> list[dict]:
-        """Pre-filter markets by volume and indicative price from Gamma metadata."""
+        """Pre-filter markets by volume, end date, and indicative price."""
         candidates: list[dict] = []
         min_price = settings.trading.min_buy_price
         max_price = settings.trading.max_buy_price
+        now = datetime.now(timezone.utc)
+        max_end_seconds = settings.trading.max_end_days * 86400
 
         for m in markets:
             volume = float(m.get("volume", 0) or 0)
             if volume < self._min_volume:
+                continue
+
+            end_raw = m.get("endDate", "") or m.get("end_date_iso", "") or ""
+            end_dt = self._parse_end_date(end_raw)
+            if end_dt is None:
+                continue
+            time_left = (end_dt - now).total_seconds()
+            if time_left <= 0 or time_left > max_end_seconds:
                 continue
 
             prices_raw = m.get("outcomePrices", "")
