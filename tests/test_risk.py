@@ -375,7 +375,7 @@ class TestStateSerialization:
     def test_state_dict_version(self):
         rm = RiskManager(_cfg())
         state = rm.to_state_dict()
-        assert state["version"] == 1
+        assert state["version"] == 2
         assert "timestamp" in state
 
 

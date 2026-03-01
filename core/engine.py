@@ -238,7 +238,9 @@ class SniperEngine:
                     outcome = await polymarket.get_market_resolution(pos.condition_id)
                     if outcome is not None:
                         resolution_price = 1.0 if outcome.lower() == "yes" else 0.0
-                        pnl = self._risk.close_position_with_pnl(pos.token_id, resolution_price)
+                        pnl = self._risk.close_position_with_pnl(
+                            pos.token_id, resolution_price, source="resolution",
+                        )
                         source = "API"
 
                 if pnl is None:
@@ -247,11 +249,15 @@ class SniperEngine:
                         continue
 
                     if price >= RESOLUTION_WIN_THRESHOLD:
-                        pnl = self._risk.close_position_with_pnl(pos.token_id, 1.0)
+                        pnl = self._risk.close_position_with_pnl(
+                            pos.token_id, 1.0, source="price-win",
+                        )
                         source = "price"
 
                     elif price <= RESOLUTION_LOSS_THRESHOLD:
-                        pnl = self._risk.close_position_with_pnl(pos.token_id, 0.0)
+                        pnl = self._risk.close_position_with_pnl(
+                            pos.token_id, 0.0, source="price-loss",
+                        )
                         source = "price"
 
                     elif self._should_stop_loss(pos, price):
@@ -289,7 +295,7 @@ class SniperEngine:
                 f"Error: {exc}"
             )
             return None
-        return self._risk.close_position_with_pnl(pos.token_id, exit_price, apply_fees=False)
+        return self._risk.close_position_with_pnl(pos.token_id, exit_price, apply_fees=False, source="stop-loss")
 
     async def _alert_position_closed(
         self, pos: PositionRecord, pnl: float, source: str,
