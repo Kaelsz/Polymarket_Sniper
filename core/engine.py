@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 log = logging.getLogger("polysniper.engine")
 
 POSITION_MONITOR_INTERVAL: float = 30.0
-RESOLUTION_WIN_THRESHOLD: float = 0.95
-RESOLUTION_LOSS_THRESHOLD: float = 0.05
+RESOLUTION_WIN_THRESHOLD: float = 1.0
+RESOLUTION_LOSS_THRESHOLD: float = 0.01
 
 
 class SniperEngine:
@@ -237,7 +237,8 @@ class SniperEngine:
                 if pos.condition_id:
                     outcome = await polymarket.get_market_resolution(pos.condition_id)
                     if outcome is not None:
-                        resolution_price = 1.0 if outcome.lower() == "yes" else 0.0
+                        won = outcome.lower() == pos.team.lower()
+                        resolution_price = 1.0 if won else 0.0
                         pnl = self._risk.close_position_with_pnl(
                             pos.token_id, resolution_price, source="resolution",
                         )
@@ -331,6 +332,7 @@ class SniperEngine:
         try:
             receipt = await self._claimer.redeem(pos.condition_id)
             if receipt:
+                await polymarket.refresh_balance()
                 await send_alert(
                     f"Auto-Claim OK\n"
                     f"Market: {pos.team}\n"

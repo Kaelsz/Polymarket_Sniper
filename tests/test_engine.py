@@ -282,10 +282,11 @@ class TestPositionMonitor:
     @pytest.mark.asyncio
     async def test_detects_win_resolution(self, event_queue):
         risk = _make_risk()
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50, condition_id="c1")
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
             mock_pm.best_ask = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
@@ -299,10 +300,11 @@ class TestPositionMonitor:
     @pytest.mark.asyncio
     async def test_detects_loss_resolution(self, event_queue):
         risk = _make_risk()
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.60)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.60, condition_id="c1")
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.get_market_resolution = AsyncMock(return_value="No")
             mock_pm.best_ask = AsyncMock(return_value=0.02)
 
             engine = self._make_engine(event_queue, risk=risk)
@@ -358,15 +360,16 @@ class TestPositionMonitor:
     @pytest.mark.asyncio
     async def test_multiple_positions_mixed(self, event_queue):
         risk = _make_risk()
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50)
-        risk.record_trade("tok2", "market", "Yes", "c2", 50.0, 0.60)
-        risk.record_trade("tok3", "market", "No", "c3", 50.0, 0.40)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50, condition_id="c1")
+        risk.record_trade("tok2", "market", "Yes", "c2", 50.0, 0.60, condition_id="c2")
+        risk.record_trade("tok3", "market", "No", "c3", 50.0, 0.40, condition_id="c3")
 
-        prices = {"tok1": 0.98, "tok2": 0.02, "tok3": 0.55}
+        resolutions = {"c1": "Yes", "c2": "No", "c3": None}
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
-            mock_pm.best_ask = AsyncMock(side_effect=lambda tid: prices.get(tid))
+            mock_pm.get_market_resolution = AsyncMock(side_effect=lambda cid: resolutions.get(cid))
+            mock_pm.best_ask = AsyncMock(return_value=0.55)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -379,11 +382,12 @@ class TestPositionMonitor:
     @pytest.mark.asyncio
     async def test_loss_resolution_can_trigger_halt(self, event_queue):
         risk = _make_risk(max_session_loss_usdc=40.0)
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.60)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.60, condition_id="c1")
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.01)
+            mock_pm.get_market_resolution = AsyncMock(return_value="No")
+            mock_pm.best_ask = AsyncMock(return_value=0.50)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -493,7 +497,8 @@ class TestApiResolution:
             assert risk.session_pnl == pytest.approx(-50.0)
 
     @pytest.mark.asyncio
-    async def test_api_unresolved_falls_back_to_price(self, event_queue):
+    async def test_api_unresolved_keeps_position(self, event_queue):
+        """When API says not resolved, position stays open regardless of price."""
         risk = _make_risk()
         risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50, condition_id="cond1")
 
@@ -505,13 +510,13 @@ class TestApiResolution:
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
 
-            assert risk.open_positions == 0
-            assert risk.session_pnl == pytest.approx(50.0)
-            mock_pm.best_ask.assert_called_once()
-            assert "price" in mock_alert.call_args[0][0]
+            assert risk.open_positions == 1
+            assert risk.session_pnl == 0.0
+            mock_alert.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_no_condition_id_skips_api(self, event_queue):
+    async def test_no_condition_id_keeps_position(self, event_queue):
+        """Without condition_id, API check is skipped; price alone does not close."""
         risk = _make_risk()
         risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50)
 
@@ -522,7 +527,7 @@ class TestApiResolution:
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
 
-            assert risk.open_positions == 0
+            assert risk.open_positions == 1
             mock_pm.get_market_resolution.assert_not_called()
 
 
@@ -554,11 +559,12 @@ class TestStateSaveOnTrade:
     @pytest.mark.asyncio
     async def test_save_called_after_resolution(self, event_queue):
         risk = _make_risk()
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50, condition_id="c1")
         mock_store = MagicMock()
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
+            mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
             mock_pm.best_ask = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk, state_store=mock_store)
@@ -697,10 +703,11 @@ class TestStopLoss:
     @pytest.mark.asyncio
     async def test_resolution_takes_priority_over_stop_loss(self, event_queue):
         risk = _make_risk(stop_loss_pct=0.5)
-        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50)
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.50, condition_id="c1")
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
             mock_pm.best_ask = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
