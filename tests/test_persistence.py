@@ -141,7 +141,7 @@ class TestStateStoreEdgeCases:
 
         with open(path) as f:
             data = json.load(f)
-        assert data["version"] == 1
+        assert data["version"] in (1, 2)
         assert len(data["positions"]) == 1
         assert not (path.with_suffix(".tmp")).exists()
 

@@ -70,10 +70,26 @@ class PositionRecord:
     timestamp: float = field(default_factory=time.time)
 
 
+@dataclass
+class ClosedPositionRecord:
+    token_id: str
+    game: str
+    team: str
+    match_id: str
+    amount_usdc: float
+    buy_price: float
+    exit_price: float
+    pnl: float
+    source: str = ""
+    opened_at: float = 0.0
+    closed_at: float = field(default_factory=time.time)
+
+
 class RiskManager:
     def __init__(self, config: RiskConfig | None = None) -> None:
         self._cfg = config or RiskConfig()
         self._positions: list[PositionRecord] = []
+        self._closed_positions: list[ClosedPositionRecord] = []
         self._trade_keys: dict[str, float] = {}
         self._match_cooldowns: dict[str, float] = {}
         self._session_pnl: float = 0.0
@@ -183,6 +199,7 @@ class RiskManager:
         exit_price: float,
         *,
         apply_fees: bool = True,
+        source: str = "",
     ) -> float | None:
         """
         Close a position and record realized PnL.
@@ -217,6 +234,19 @@ class RiskManager:
             pos.game, pos.team, pos.buy_price, exit_price,
             shares, gross_pnl, fees, pnl,
         )
+
+        self._closed_positions.append(ClosedPositionRecord(
+            token_id=pos.token_id,
+            game=pos.game,
+            team=pos.team,
+            match_id=pos.match_id,
+            amount_usdc=pos.amount_usdc,
+            buy_price=pos.buy_price,
+            exit_price=exit_price,
+            pnl=pnl,
+            source=source,
+            opened_at=pos.timestamp,
+        ))
 
         self.close_position(token_id)
         self.record_pnl(pnl)
@@ -289,7 +319,7 @@ class RiskManager:
     # ------------------------------------------------------------------
     def to_state_dict(self) -> dict:
         return {
-            "version": 1,
+            "version": 2,
             "timestamp": time.time(),
             "session_pnl": self._session_pnl,
             "halted": self._halted,
@@ -306,6 +336,22 @@ class RiskManager:
                     "timestamp": p.timestamp,
                 }
                 for p in self._positions
+            ],
+            "closed_positions": [
+                {
+                    "token_id": c.token_id,
+                    "game": c.game,
+                    "team": c.team,
+                    "match_id": c.match_id,
+                    "amount_usdc": c.amount_usdc,
+                    "buy_price": c.buy_price,
+                    "exit_price": c.exit_price,
+                    "pnl": c.pnl,
+                    "source": c.source,
+                    "opened_at": c.opened_at,
+                    "closed_at": c.closed_at,
+                }
+                for c in self._closed_positions
             ],
             "trade_keys": dict(self._trade_keys),
             "match_cooldowns": dict(self._match_cooldowns),
@@ -327,11 +373,15 @@ class RiskManager:
         self._positions = [
             PositionRecord(**p) for p in state.get("positions", [])
         ]
+        self._closed_positions = [
+            ClosedPositionRecord(**c) for c in state.get("closed_positions", [])
+        ]
         self._trade_keys = dict(state.get("trade_keys", {}))
         self._match_cooldowns = dict(state.get("match_cooldowns", {}))
         log.info(
-            "RISK  State loaded: %d positions, PnL=$%.2f, halted=%s",
-            self.open_positions, self._session_pnl, self._halted,
+            "RISK  State loaded: %d positions, %d closed, PnL=$%.2f, halted=%s",
+            self.open_positions, len(self._closed_positions),
+            self._session_pnl, self._halted,
         )
 
     @staticmethod
