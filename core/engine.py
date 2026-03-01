@@ -123,13 +123,28 @@ class SniperEngine:
             self._reject(opp.token_id)
             return
 
-        amount = self._sizer.compute(
-            fuzzy_score=100.0,
-            ask_price=ask,
-            max_buy_price=settings.trading.max_buy_price,
-        )
-
         async with self._trade_lock:
+            max_pos = self._risk._cfg.max_open_positions
+            open_pos = self._risk.open_positions
+            available_slots = max_pos - open_pos
+            if available_slots <= 0:
+                log.info("SKIP  No available slots (%d/%d)", open_pos, max_pos)
+                self._reject(opp.token_id)
+                return
+
+            balance = await polymarket.get_balance_usdc()
+            if balance < 5.0:
+                log.warning("SKIP  Insufficient balance: $%.2f", balance)
+                self._reject(opp.token_id)
+                return
+
+            amount = round(balance / available_slots, 2)
+            amount = max(5.0, amount)
+            log.info(
+                "SIZING  balance=$%.2f, slots=%d/%d → bet=$%.2f",
+                balance, open_pos, max_pos, amount,
+            )
+
             decision = self._risk.pre_trade_check(
                 token_id=opp.token_id,
                 game="market",
