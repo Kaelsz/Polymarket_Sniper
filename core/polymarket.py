@@ -202,6 +202,23 @@ class PolymarketClient:
             log.warning("Failed to fetch CLOB balance: %s", exc)
             return 0.0
 
+    async def refresh_balance(self) -> None:
+        """Force the CLOB to re-check on-chain balance (call after redeem/claim)."""
+        if not self._api_ready:
+            return
+        try:
+            await self._throttle()
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.update_balance_allowance(
+                    BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+                ),
+            )
+            log.info("CLOB balance refreshed")
+        except Exception as exc:
+            log.warning("Failed to refresh CLOB balance: %s", exc)
+
     async def best_ask(self, token_id: str) -> float | None:
         """Return the lowest ask price for a token, or None if empty."""
         book = await self.get_order_book(token_id)
