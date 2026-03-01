@@ -17,6 +17,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from core.claimer import PositionClaimer
 from core.config import ConfigError, settings, validate_config
 from core.dashboard import start_dashboard
 from core.engine import SniperEngine
@@ -153,10 +154,17 @@ async def main() -> None:
         kelly_win_prob=cfg.kelly_win_prob,
     ))
 
+    claimer = PositionClaimer(
+        private_key=settings.poly.private_key,
+        safe_address=settings.poly.funder or settings.poly.address,
+    )
+    log.info("Auto-claimer enabled (Safe=%s)", (settings.poly.funder or settings.poly.address)[:10] + "...")
+
     engine = SniperEngine(
         opp_queue, risk=risk, circuit_breaker=cb,
         state_store=state_store, sizer=sizer,
         on_reject=scanner.clear_seen,
+        claimer=claimer,
     )
 
     dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port, limiter=limiter)

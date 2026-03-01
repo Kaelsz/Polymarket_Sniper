@@ -20,6 +20,7 @@ import time
 from typing import TYPE_CHECKING, Callable
 
 from core.circuit_breaker import CircuitBreaker
+from core.claimer import PositionClaimer
 from core.config import settings
 from core.polymarket import polymarket
 from core.risk import PositionRecord, RiskManager
@@ -46,6 +47,7 @@ class SniperEngine:
         state_store: StateStore | None = None,
         sizer: OrderSizer | None = None,
         on_reject: Callable[[str], None] | None = None,
+        claimer: PositionClaimer | None = None,
     ) -> None:
         self._queue = queue
         self._risk = risk or RiskManager()
@@ -55,6 +57,7 @@ class SniperEngine:
         self._state_store = state_store
         self._sizer = sizer or OrderSizer()
         self._on_reject = on_reject
+        self._claimer = claimer
 
     async def run(self) -> None:
         log.info("Sniper engine started — waiting for opportunities...")
@@ -242,6 +245,8 @@ class SniperEngine:
 
                 if pnl is not None:
                     changed = True
+                    if pnl > 0 and pos.condition_id and self._claimer:
+                        await self._auto_redeem(pos)
                     await self._alert_position_closed(pos, pnl, source)
 
             except Exception as exc:
@@ -297,6 +302,29 @@ class SniperEngine:
                 f"Bought@${pos.buy_price:.4f} → ${'1.00' if won else '0.00'}\n"
                 f"PnL: ${pnl:+.2f}\n"
                 f"Source: {source}"
+            )
+
+    async def _auto_redeem(self, pos: PositionRecord) -> None:
+        """Auto-claim USDC.e from a resolved winning position."""
+        log.info("AUTO-REDEEM starting for %s (%s)", pos.team, pos.condition_id[:16])
+        try:
+            receipt = await self._claimer.redeem(pos.condition_id)
+            if receipt:
+                await send_alert(
+                    f"Auto-Claim OK\n"
+                    f"Market: {pos.team}\n"
+                    f"Condition: {pos.condition_id[:16]}...\n"
+                    f"USDC.e recovered to proxy wallet"
+                )
+            else:
+                log.warning("AUTO-REDEEM returned None for %s", pos.condition_id[:16])
+        except Exception as exc:
+            log.error("AUTO-REDEEM error for %s: %s", pos.condition_id[:16], exc)
+            await send_alert(
+                f"Auto-Claim Failed\n"
+                f"Market: {pos.team}\n"
+                f"Error: {exc}\n"
+                f"Claim manually on polymarket.com"
             )
 
     def _save_state(self) -> None:
