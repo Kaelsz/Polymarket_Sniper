@@ -50,6 +50,7 @@ class TestSniperEngineHandleOpportunity:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
 
             engine = self._make_engine(event_queue, risk=_make_risk())
             await engine._handle_opportunity(_opp())
@@ -61,6 +62,7 @@ class TestSniperEngineHandleOpportunity:
              patch("core.engine.settings") as mock_settings, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.995)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
 
@@ -74,6 +76,7 @@ class TestSniperEngineHandleOpportunity:
              patch("core.engine.settings") as mock_settings, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.50)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.95
             mock_settings.trading.max_buy_price = 0.99
 
@@ -90,6 +93,7 @@ class TestSniperEngineHandleOpportunity:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value={"order_id": "xyz"})
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -98,10 +102,10 @@ class TestSniperEngineHandleOpportunity:
             engine = self._make_engine(event_queue, risk=risk)
             await engine._handle_opportunity(_opp(token_id="tok_yes_navi"))
 
-            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", 50.0)
+            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", 10.0)
             assert len(engine._trades) == 1
             assert engine._trades[0]["open_positions"] == 1
-            assert engine._trades[0]["total_exposure"] == 50.0
+            assert engine._trades[0]["total_exposure"] == 10.0
             mock_alert.assert_called_once()
 
     @pytest.mark.asyncio
@@ -111,6 +115,7 @@ class TestSniperEngineHandleOpportunity:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.96)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 25.0
@@ -130,6 +135,7 @@ class TestSniperEngineHandleOpportunity:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.99)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -153,6 +159,7 @@ class TestEngineRiskIntegration:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._handle_opportunity(_opp())
@@ -169,6 +176,7 @@ class TestEngineRiskIntegration:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -192,6 +200,7 @@ class TestEngineRiskIntegration:
              patch("core.engine.settings") as mock_settings, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -220,6 +229,7 @@ class TestTradeLock:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(side_effect=slow_buy)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -245,6 +255,7 @@ class TestTradeLock:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -395,6 +406,7 @@ class TestMarketBuyErrorHandling:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(side_effect=Exception("API timeout"))
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -426,6 +438,7 @@ class TestMarketBuyErrorHandling:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(side_effect=fail_then_succeed)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -528,6 +541,7 @@ class TestStateSaveOnTrade:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -560,6 +574,7 @@ class TestStateSaveOnTrade:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -580,6 +595,7 @@ class TestStateSaveOnTrade:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_ask = AsyncMock(return_value=0.97)
             mock_pm.market_buy = AsyncMock(return_value=None)
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
             mock_settings.trading.min_buy_price = 0.0
             mock_settings.trading.max_buy_price = 0.99
             mock_settings.trading.order_size_usdc = 50.0
@@ -727,6 +743,7 @@ class TestEngineCircuitBreakerIntegration:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
+            mock_pm.get_balance_usdc = AsyncMock(return_value=100.0)
 
             engine = self._make_engine(event_queue, risk=_make_risk(), cb=cb)
             await engine._handle_opportunity(_opp())

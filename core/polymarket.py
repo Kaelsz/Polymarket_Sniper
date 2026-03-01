@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
+from py_clob_client.clob_types import ApiCreds, AssetType, BalanceAllowanceParams, OrderArgs, OrderType
 
 from core.config import settings
 from core.rate_limiter import RateLimiter
@@ -182,6 +182,25 @@ class PolymarketClient:
         )
         log.info("Sell order posted: %s", signed)
         return signed
+
+    async def get_balance_usdc(self) -> float:
+        """Fetch available USDC.e balance from the CLOB (in dollars)."""
+        if not self._api_ready:
+            return 0.0
+        try:
+            await self._throttle()
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.client.get_balance_allowance(
+                    BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+                ),
+            )
+            raw = result.get("balance", "0") if isinstance(result, dict) else getattr(result, "balance", "0")
+            return int(raw) / 1e6
+        except Exception as exc:
+            log.warning("Failed to fetch CLOB balance: %s", exc)
+            return 0.0
 
     async def best_ask(self, token_id: str) -> float | None:
         """Return the lowest ask price for a token, or None if empty."""
