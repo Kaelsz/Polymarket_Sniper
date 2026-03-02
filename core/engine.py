@@ -36,7 +36,7 @@ log = logging.getLogger("polysniper.engine")
 POSITION_MONITOR_INTERVAL: float = 30.0
 RESOLUTION_WIN_THRESHOLD: float = 1.0
 RESOLUTION_LOSS_THRESHOLD: float = 0.01
-STALE_CYCLES_THRESHOLD: int = 10
+STALE_CYCLES_THRESHOLD: int = 60
 
 
 class SniperEngine:
@@ -248,13 +248,18 @@ class SniperEngine:
                         source = "API"
 
                 if pnl is None:
-                    price = await polymarket.best_ask(pos.token_id)
-                    if price is None:
+                    try:
+                        price = await polymarket.best_ask(pos.token_id)
+                    except Exception as exc:
                         self._stale_counts[pos.token_id] = self._stale_counts.get(pos.token_id, 0) + 1
                         count = self._stale_counts[pos.token_id]
+                        log.debug(
+                            "Position %s: order book error (%d/%d): %s",
+                            pos.team, count, STALE_CYCLES_THRESHOLD, exc,
+                        )
                         if count >= STALE_CYCLES_THRESHOLD:
                             log.warning(
-                                "STALE  Removing ghost position %s (%s) after %d cycles with no order book",
+                                "STALE  Removing ghost position %s (%s) after %d consecutive errors",
                                 pos.team, pos.token_id[:16], count,
                             )
                             pnl = self._risk.close_position_with_pnl(
@@ -263,10 +268,11 @@ class SniperEngine:
                             source = "stale"
                             self._stale_counts.pop(pos.token_id, None)
                         else:
-                            log.debug("Position %s: no order book (%d/%d)", pos.team, count, STALE_CYCLES_THRESHOLD)
                             continue
+                        price = None
 
-                    self._stale_counts.pop(pos.token_id, None)
+                    if price is not None:
+                        self._stale_counts.pop(pos.token_id, None)
 
                     if price is not None and price >= RESOLUTION_WIN_THRESHOLD:
                         pnl = self._risk.close_position_with_pnl(
