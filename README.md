@@ -1,63 +1,74 @@
-# PolySniper v1.0
+# PolySniper v2.0
 
-Esport latency arbitrage bot for [Polymarket](https://polymarket.com). Detects match results from live esport feeds before markets adjust, and places automated trades on outcome tokens.
+High-frequency resolution sniper for [Polymarket](https://polymarket.com). Scans all active markets in real time, identifies near-certain outcomes (price $0.95–$0.99), and automatically buys outcome tokens that resolve to $1.00 — capturing the spread as profit.
 
-## Architecture
+## How It Works
 
 ```
-                   Live Data Sources
-           ┌──────────┬──────────┬──────────┐
-           │  CS2     │  LoL     │ Valorant │  Dota2
-           │ (WS/SSE)│ (REST)   │ (REST)   │ (REST)
-           └────┬─────┴────┬─────┴────┬─────┴────┬──┘
-                │          │          │          │
-                ▼          ▼          ▼          ▼
-           ┌─────────────────────────────────────────┐
-           │           asyncio.Queue                  │
-           └──────────────────┬──────────────────────┘
-                              │ MatchEvent
-                              ▼
-           ┌─────────────────────────────────────────┐
-           │           SniperEngine                   │
-           │  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-           │  │  Fuzzy   │ │   Risk   │ │ Position │ │
-           │  │  Mapper  │ │ Manager  │ │ Monitor  │ │
-           │  └──────────┘ └──────────┘ └──────────┘ │
-           └──────────────────┬──────────────────────┘
-                              │
-                              ▼
-           ┌─────────────────────────────────────────┐
-           │        Polymarket CLOB Client            │
-           │   market_buy · market_sell · best_ask    │
-           └─────────────────────────────────────────┘
+    Gamma API (market discovery, every 30s)
+                │
+                ▼
+    ┌───────────────────────┐
+    │    MarketScanner      │──── filters by volume, end date, price
+    │  (33K+ markets/scan)  │
+    └───────┬───────────────┘
+            │                          ┌──────────────────────────┐
+            │ eligible markets         │   Polymarket WebSocket   │
+            ├─────────────────────────▶│  wss://ws-subscriptions  │
+            │                          │  real-time price stream  │
+            │                          └──────────┬───────────────┘
+            │ Opportunities                       │ WS-Signals (<1s)
+            ▼                                     ▼
+    ┌─────────────────────────────────────────────────┐
+    │                 asyncio.Queue                    │
+    └──────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+    ┌─────────────────────────────────────────────────┐
+    │               SniperEngine                      │
+    │  ┌──────────┐ ┌──────────┐ ┌────────────────┐   │
+    │  │  CLOB    │ │   Risk   │ │   Position     │   │
+    │  │ Verify   │ │ Manager  │ │   Monitor      │   │
+    │  └──────────┘ └──────────┘ └────────────────┘   │
+    └──────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+    ┌─────────────────────────────────────────────────┐
+    │          Polymarket CLOB Client                  │
+    │    market_buy · market_sell · auto-claim         │
+    └─────────────────────────────────────────────────┘
 ```
+
+**Flow:** Scanner discovers eligible markets on the Gamma API → WebSocket subscribes for sub-second price updates → when a token enters the buy window, the Engine verifies on the CLOB order book, checks risk limits, and fires a limit order → Position Monitor watches for resolution or quick-exit opportunity → Auto-Claimer redeems winning tokens back to USDC.e.
 
 ## Features
 
-- **4 esport adapters** — CS2 (WebSocket/SSE), League of Legends, Valorant, Dota 2 (REST polling) with automatic reconnection and exponential backoff
-- **Fuzzy team mapping** — Maps raw team names to Polymarket tokens using `rapidfuzz`, with alias expansion (NAVI, G2, SEN, etc.)
-- **Risk management** — Duplicate trade prevention, per-match cooldown, position limits (global + per-game), exposure cap, session loss circuit breaker
-- **Polymarket fees** — 2% fee deduction on winning positions (configurable)
-- **Stop-loss** — Automatic market sell when price drops below threshold
-- **Position monitor** — Background loop checks official API resolution + price-based fallback
-- **Circuit breaker** — Monitors adapter health, halts trading on too many failures or stale data
-- **State persistence** — JSON atomic writes, survives restarts
-- **Telegram alerts** — Trade executions, stop-loss triggers, crashes, circuit breaker events
-- **Real-time HTTP dashboard** — Live web UI at `http://localhost:8080` showing positions, PnL, adapter health, trades (auto-refreshes every 5s)
-- **Rotating file logs** — 10 MB per file, 5 backups (configurable)
-- **Docker ready** — Dockerfile + docker-compose with named volumes for data and logs
+- **Dual-pipeline detection** — Gamma API polling for market discovery + Polymarket WebSocket for real-time price streaming (<1s latency)
+- **All-market scanning** — Monitors 33K+ active markets per cycle, filters by volume, end date, and question-date extraction
+- **Dynamic order sizing** — Distributes available balance evenly across open slots (`balance / available_slots`)
+- **Quick-exit strategy** — Sells at market when bid reaches $0.995 instead of waiting for resolution, recycling capital instantly
+- **Auto-claim** — Redeems resolved winning positions on-chain via Gnosis Safe `execTransaction`
+- **Risk management** — Duplicate prevention, per-market limits, exposure cap, session loss circuit breaker, match cooldown
+- **Stop-loss** — Automatic market sell when price drops below configurable threshold
+- **Position monitor** — Checks official API resolution + price-based fallback + stale position cleanup
+- **Circuit breaker** — Halts trading on scanner failures or stale data
+- **State persistence** — Atomic JSON writes, survives Docker restarts
+- **Telegram alerts** — Trade executions, resolutions, quick-exits, stop-losses, errors, circuit breaker events
+- **Real-time dashboard** — Web UI at `http://localhost:8080` with positions, PnL history, WebSocket status, adapter health (auto-refresh 5s)
+- **Rate limiting** — Configurable token bucket throttle for API calls
+- **Docker ready** — Dockerfile + docker-compose with named volumes for data/logs and healthcheck
 - **Dry-run mode** — Full pipeline without placing real orders
-- **289 tests** — Unit, integration, and end-to-end with pytest
+- **268 tests** — Unit, integration, and end-to-end with pytest
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
-- A Polygon wallet with USDC (for live trading)
-- Polymarket CLOB API access
+- A Polygon wallet with USDC.e + POL (for gas)
+- Polymarket account (for proxy wallet address)
 
-### Setup
+### 1. Clone & Install
 
 ```bash
 git clone https://github.com/Kaelsz/Polymarket_Sniper.git
@@ -65,24 +76,52 @@ cd Polymarket_Sniper
 
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
-
-cp .env.example .env
-# Edit .env with your credentials
 ```
 
-### Run
+### 2. Configure
 
 ```bash
-# Dry-run mode (default)
+cp .env.example .env
+```
+
+Edit `.env` with your credentials. The key variables:
+
+```env
+POLYMARKET_ADDRESS=0xYourProxyWalletAddress
+POLY_PRIVATE_KEY=0xYourPrivateKey
+POLY_SIGNATURE_TYPE=2
+POLY_FUNDER=0xYourProxyWalletAddress
+```
+
+### 3. Derive API Keys
+
+API credentials must be derived from your private key (not the ones from the Polymarket dashboard):
+
+```bash
+python derive_keys.py
+```
+
+Copy the output (`POLY_API_KEY`, `POLY_API_SECRET`, `POLY_API_PASSPHRASE`) into your `.env`.
+
+### 4. Approve USDC.e & Set Allowances
+
+```bash
+python approve_usdc.py
+python setup_allowance.py
+```
+
+### 5. Run
+
+```bash
+# Dry-run (default — simulates everything)
 python main.py
 
 # Live trading
 DRY_RUN=false python main.py
 ```
 
-### Docker
+### Docker (recommended for VPS)
 
 ```bash
 docker compose up -d --build
@@ -102,70 +141,144 @@ pytest -v
 
 ## Configuration
 
-All parameters are set via environment variables (or `.env` file):
+All parameters via environment variables or `.env` file:
+
+### Credentials
 
 | Variable | Default | Description |
 |---|---|---|
-| `POLYMARKET_ADDRESS` | — | Polygon wallet address |
-| `POLY_PRIVATE_KEY` | — | Wallet private key |
-| `POLYMARKET_HOST` | `https://clob.polymarket.com` | CLOB API endpoint |
+| `POLYMARKET_ADDRESS` | — | Polymarket proxy wallet address |
+| `POLY_PRIVATE_KEY` | — | EOA private key (hex) |
+| `POLY_API_KEY` | — | CLOB API key (from `derive_keys.py`) |
+| `POLY_API_SECRET` | — | CLOB API secret |
+| `POLY_API_PASSPHRASE` | — | CLOB API passphrase |
+| `POLY_SIGNATURE_TYPE` | `0` | `0`=EOA, `1`=Poly Proxy, `2`=Gnosis Safe |
+| `POLY_FUNDER` | — | Proxy wallet address (leave empty to use `POLYMARKET_ADDRESS`) |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram bot token (optional) |
 | `TELEGRAM_CHAT_ID` | — | Telegram chat ID (optional) |
-| `DRY_RUN` | `true` | Simulate trades without placing orders |
-| `MAX_BUY_PRICE` | `0.85` | Max ask price to accept (1.0 = certain) |
-| `ORDER_SIZE_USDC` | `50.0` | USDC amount per trade |
-| `MAX_OPEN_POSITIONS` | `10` | Maximum concurrent open positions |
-| `MAX_POSITIONS_PER_GAME` | `4` | Max positions per game (CS2, LoL, etc.) |
-| `MAX_SESSION_LOSS_USDC` | `200.0` | Halt trading after this session loss |
+
+### Trading
+
+| Variable | Default | Description |
+|---|---|---|
+| `DRY_RUN` | `true` | Simulate trades without real orders |
+| `MIN_BUY_PRICE` | `0.95` | Minimum ask price to buy |
+| `MAX_BUY_PRICE` | `0.99` | Maximum ask price to buy |
+| `ORDER_SIZE_USDC` | `50.0` | Base USDC per trade (used with sizing modes) |
+| `SIZING_MODE` | `fixed` | Order sizing: `fixed`, `confidence`, or `kelly` |
+| `MIN_ORDER_USDC` | `10.0` | Minimum order size |
+| `MAX_ORDER_USDC` | `200.0` | Maximum order size |
+| `EXIT_SELL_THRESHOLD` | `0.995` | Quick-exit: sell when bid reaches this price |
+
+### Scanner
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCANNER_INTERVAL` | `30` | Seconds between Gamma API scans |
+| `MIN_VOLUME_USDC` | `100000` | Minimum market volume ($) to consider |
+| `MAX_END_HOURS` | `24` | Only markets ending within this window |
+
+### Risk Management
+
+| Variable | Default | Description |
+|---|---|---|
+| `MAX_OPEN_POSITIONS` | `10` | Maximum concurrent positions |
+| `MAX_POSITIONS_PER_GAME` | `10` | Max positions per market |
+| `MAX_SESSION_LOSS_USDC` | `200.0` | Halt trading after this loss |
 | `MAX_TOTAL_EXPOSURE_USDC` | `500.0` | Maximum total capital at risk |
-| `MATCH_COOLDOWN_SECONDS` | `30.0` | Cooldown between trades on same match |
-| `FEE_RATE` | `0.02` | Polymarket fee rate on winning positions |
-| `STOP_LOSS_PCT` | `0.0` | Stop-loss threshold (0 = disabled, 0.3 = 30%) |
+| `MATCH_COOLDOWN_SECONDS` | `30.0` | Cooldown between trades on same market |
+| `FEE_RATE` | `0.02` | Fee rate on winning positions |
+| `STOP_LOSS_PCT` | `0.0` | Stop-loss threshold (0=disabled, 0.3=30%) |
+
+### Infrastructure
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_RATE_LIMIT` | `5.0` | API calls per second |
+| `API_RATE_BURST` | `10` | Burst capacity for rate limiter |
 | `DASHBOARD_PORT` | `8080` | HTTP dashboard port |
-| `CB_FAILURE_THRESHOLD` | `3` | Adapter failures before circuit opens |
-| `CB_MIN_HEALTHY_ADAPTERS` | `1` | Min healthy adapters to keep trading |
-| `CB_STALE_DATA_TIMEOUT` | `120.0` | Seconds before adapter data is stale |
 | `LOG_DIR` | `logs` | Log file directory |
 | `LOG_MAX_BYTES` | `10485760` | Max log file size (10 MB) |
-| `LOG_BACKUP_COUNT` | `5` | Number of rotated log files to keep |
+| `LOG_BACKUP_COUNT` | `5` | Number of rotated log backups |
 
 ## Project Structure
 
 ```
-polymarket_trade/
-├── adapters/
-│   ├── base.py              # BaseAdapter ABC + MatchEvent dataclass
-│   ├── cs2_adapter.py       # Counter-Strike 2 (WebSocket + SSE)
-│   ├── lol_adapter.py       # League of Legends (REST polling)
-│   ├── valorant_adapter.py  # Valorant (REST polling)
-│   └── dota2_adapter.py     # Dota 2 (REST polling)
+Polymarket_Sniper/
 ├── core/
 │   ├── config.py            # Settings from environment variables
-│   ├── engine.py            # SniperEngine — event consumer + trade executor
-│   ├── mapper.py            # FuzzyMapper — team name → token ID
+│   ├── scanner.py           # MarketScanner — Gamma API polling + pre-filter
+│   ├── ws_stream.py         # PriceStream — real-time WebSocket price feed
+│   ├── engine.py            # SniperEngine — CLOB verify + trade execution + monitor
 │   ├── polymarket.py        # Async Polymarket CLOB client wrapper
-│   ├── risk.py              # RiskManager — limits, dedup, PnL, fees
-│   ├── circuit_breaker.py   # Adapter health monitoring
+│   ├── risk.py              # RiskManager — limits, dedup, PnL tracking, fees
+│   ├── sizing.py            # OrderSizer — fixed / confidence / kelly sizing
+│   ├── claimer.py           # PositionClaimer — on-chain auto-redeem via Safe
+│   ├── circuit_breaker.py   # Scanner health monitoring
+│   ├── rate_limiter.py      # Token bucket rate limiter
 │   ├── persistence.py       # JSON state persistence (atomic writes)
 │   └── dashboard.py         # Real-time HTTP dashboard (aiohttp)
 ├── utils/
 │   └── alerts.py            # Telegram notification system
-├── tests/                   # 271 tests (pytest + pytest-asyncio)
-├── main.py                  # Entry point + orchestrator
+├── backtest/
+│   ├── scenario.py          # Backtesting scenario loader
+│   ├── runner.py            # Backtest execution engine
+│   └── report.py            # Performance report generator
+├── tests/                   # 268 tests (pytest + pytest-asyncio)
+├── scenarios/               # Example backtest scenarios
+├── main.py                  # Entry point + async orchestrator
+├── derive_keys.py           # Generate CLOB API credentials from private key
+├── approve_usdc.py          # Approve USDC.e for Polymarket contracts
+├── setup_allowance.py       # Set CLOB balance allowances
+├── debug_api.py             # API credential diagnostic tool
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
 └── .env.example
 ```
 
-## How It Works
+## VPS Deployment Guide
 
-1. **Adapters** connect to live esport data sources and emit `MatchEvent` objects (team won, game, match ID) into an async queue
-2. **SniperEngine** consumes events and uses the **FuzzyMapper** to find the matching Polymarket "Will X win?" market
-3. **RiskManager** validates the trade (dedup, cooldown, limits, exposure) before execution
-4. **PolymarketClient** places a market-buy order on the YES token at the current ask price
-5. **Position Monitor** runs in background, checking for official market resolution or price-based heuristics to close positions and record realized PnL
-6. **Circuit Breaker** monitors adapter health and halts all trading if too many feeds go down
+### 1. Server Setup (Ubuntu 22.04+)
+
+```bash
+apt update && apt install -y docker.io docker-compose git python3 python3-pip python3-venv
+```
+
+### 2. Clone & Configure
+
+```bash
+git clone https://github.com/Kaelsz/Polymarket_Sniper.git
+cd Polymarket_Sniper
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+python3 derive_keys.py
+# Copy output to .env
+
+cp .env.example .env
+nano .env
+# Fill in credentials + set DRY_RUN=false
+
+python3 approve_usdc.py
+python3 setup_allowance.py
+python3 debug_api.py   # Verify auth works
+```
+
+### 3. Launch
+
+```bash
+docker compose up -d --build
+docker compose logs -f polysniper
+```
+
+### 4. Update
+
+```bash
+git pull
+docker compose up -d --build
+```
 
 ## Disclaimer
 
