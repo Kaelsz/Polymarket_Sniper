@@ -249,7 +249,7 @@ class SniperEngine:
 
                 if pnl is None:
                     try:
-                        price = await polymarket.best_ask(pos.token_id)
+                        bid = await polymarket.best_bid(pos.token_id)
                     except Exception as exc:
                         self._stale_counts[pos.token_id] = self._stale_counts.get(pos.token_id, 0) + 1
                         count = self._stale_counts[pos.token_id]
@@ -269,30 +269,24 @@ class SniperEngine:
                             self._stale_counts.pop(pos.token_id, None)
                         else:
                             continue
-                        price = None
+                        bid = None
 
-                    if price is not None:
+                    if bid is not None:
                         self._stale_counts.pop(pos.token_id, None)
 
-                    if price is not None and price >= RESOLUTION_WIN_THRESHOLD:
-                        pnl = self._risk.close_position_with_pnl(
-                            pos.token_id, 1.0, source="price-win",
-                        )
-                        source = "price"
+                    exit_threshold = settings.trading.exit_sell_threshold
+                    if bid is not None and bid >= exit_threshold:
+                        pnl = await self._execute_quick_exit(pos, bid)
+                        if pnl is not None:
+                            source = "quick-exit"
 
-                    elif price is not None and price <= RESOLUTION_LOSS_THRESHOLD:
-                        pnl = self._risk.close_position_with_pnl(
-                            pos.token_id, 0.0, source="price-loss",
-                        )
-                        source = "price"
-
-                    elif price is not None and self._should_stop_loss(pos, price):
-                        pnl = await self._execute_stop_loss(pos, price)
+                    elif bid is not None and self._should_stop_loss(pos, bid):
+                        pnl = await self._execute_stop_loss(pos, bid)
                         source = "stop-loss"
 
                 if pnl is not None:
                     changed = True
-                    if pnl > 0 and pos.condition_id and self._claimer:
+                    if source == "API" and pnl > 0 and pos.condition_id and self._claimer:
                         await self._auto_redeem(pos)
                     await self._alert_position_closed(pos, pnl, source)
 
@@ -308,6 +302,27 @@ class SniperEngine:
             return False
         trigger_price = pos.buy_price * (1.0 - sl)
         return current_price < trigger_price
+
+    async def _execute_quick_exit(self, pos: PositionRecord, bid_price: float) -> float | None:
+        """Sell position at market when bid >= exit threshold. Capital recycled instantly."""
+        shares = pos.amount_usdc / pos.buy_price
+        log.info(
+            "QUICK-EXIT  %s | bid=$%.4f (bought@$%.4f) | selling %.2f shares",
+            pos.team, bid_price, pos.buy_price, shares,
+        )
+        try:
+            await polymarket.market_sell(pos.token_id, shares)
+        except Exception as exc:
+            log.error("QUICK-EXIT SELL FAILED: %s: %s", pos.team, exc)
+            await send_alert(
+                f"Quick-Exit Sell Failed\n"
+                f"Market: {pos.team}\n"
+                f"Error: {exc}"
+            )
+            return None
+        return self._risk.close_position_with_pnl(
+            pos.token_id, bid_price, apply_fees=False, source="quick-exit",
+        )
 
     async def _execute_stop_loss(self, pos: PositionRecord, exit_price: float) -> float | None:
         shares = pos.amount_usdc / pos.buy_price
@@ -326,7 +341,21 @@ class SniperEngine:
     async def _alert_position_closed(
         self, pos: PositionRecord, pnl: float, source: str,
     ) -> None:
-        if source == "stop-loss":
+        if source == "quick-exit":
+            log.info("QUICK-EXIT  %s | PnL=$%.4f", pos.team, pnl)
+            closed = next(
+                (c for c in reversed(self._risk._closed_positions) if c.token_id == pos.token_id),
+                None,
+            )
+            exit_p = f"${closed.exit_price:.4f}" if closed else "market"
+            await send_alert(
+                f"Quick-Exit SOLD\n"
+                f"Market: {pos.team}\n"
+                f"Bought@${pos.buy_price:.4f} → Sold@{exit_p}\n"
+                f"PnL: ${pnl:+.4f}\n"
+                f"Capital recycled instantly"
+            )
+        elif source == "stop-loss":
             log.warning(
                 "STOP-LOSS  %s | PnL=$%.2f", pos.team, pnl,
             )

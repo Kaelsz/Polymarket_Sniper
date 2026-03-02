@@ -287,7 +287,7 @@ class TestPositionMonitor:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
-            mock_pm.best_ask = AsyncMock(return_value=0.98)
+            mock_pm.best_bid = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -305,7 +305,7 @@ class TestPositionMonitor:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.get_market_resolution = AsyncMock(return_value="No")
-            mock_pm.best_ask = AsyncMock(return_value=0.02)
+            mock_pm.best_bid = AsyncMock(return_value=0.02)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -322,7 +322,7 @@ class TestPositionMonitor:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
-            mock_pm.best_ask = AsyncMock(return_value=0.65)
+            mock_pm.best_bid = AsyncMock(return_value=0.65)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -338,7 +338,7 @@ class TestPositionMonitor:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=None)
+            mock_pm.best_bid = AsyncMock(return_value=None)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -351,7 +351,7 @@ class TestPositionMonitor:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(side_effect=Exception("API down"))
+            mock_pm.best_bid = AsyncMock(side_effect=Exception("API down"))
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -369,7 +369,7 @@ class TestPositionMonitor:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.get_market_resolution = AsyncMock(side_effect=lambda cid: resolutions.get(cid))
-            mock_pm.best_ask = AsyncMock(return_value=0.55)
+            mock_pm.best_bid = AsyncMock(return_value=0.55)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -387,7 +387,7 @@ class TestPositionMonitor:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.get_market_resolution = AsyncMock(return_value="No")
-            mock_pm.best_ask = AsyncMock(return_value=0.50)
+            mock_pm.best_bid = AsyncMock(return_value=0.50)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -478,7 +478,7 @@ class TestApiResolution:
 
             assert risk.open_positions == 0
             assert risk.session_pnl == pytest.approx(50.0)
-            mock_pm.best_ask.assert_not_called()
+            mock_pm.best_bid.assert_not_called()
             assert "API" in mock_alert.call_args[0][0]
 
     @pytest.mark.asyncio
@@ -505,7 +505,7 @@ class TestApiResolution:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.get_market_resolution = AsyncMock(return_value=None)
-            mock_pm.best_ask = AsyncMock(return_value=0.98)
+            mock_pm.best_bid = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -522,7 +522,7 @@ class TestApiResolution:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.98)
+            mock_pm.best_bid = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -565,7 +565,7 @@ class TestStateSaveOnTrade:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
-            mock_pm.best_ask = AsyncMock(return_value=0.98)
+            mock_pm.best_bid = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk, state_store=mock_store)
             await engine._check_position_resolutions()
@@ -626,7 +626,7 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
-            mock_pm.best_ask = AsyncMock(return_value=0.25)
+            mock_pm.best_bid = AsyncMock(return_value=0.25)
             mock_pm.market_sell = AsyncMock(return_value=None)
 
             engine = self._make_engine(event_queue, risk=risk)
@@ -646,7 +646,7 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.20)
+            mock_pm.best_bid = AsyncMock(return_value=0.20)
             mock_pm.market_sell = AsyncMock(return_value=None)
 
             engine = self._make_engine(event_queue, risk=risk)
@@ -661,7 +661,7 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.10)
+            mock_pm.best_bid = AsyncMock(return_value=0.10)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -677,7 +677,7 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.35)
+            mock_pm.best_bid = AsyncMock(return_value=0.35)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -690,7 +690,7 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
-            mock_pm.best_ask = AsyncMock(return_value=0.20)
+            mock_pm.best_bid = AsyncMock(return_value=0.20)
             mock_pm.market_sell = AsyncMock(side_effect=Exception("API down"))
 
             engine = self._make_engine(event_queue, risk=risk)
@@ -708,7 +708,7 @@ class TestStopLoss:
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
-            mock_pm.best_ask = AsyncMock(return_value=0.98)
+            mock_pm.best_bid = AsyncMock(return_value=0.98)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -724,12 +724,117 @@ class TestStopLoss:
 
         with patch("core.engine.polymarket") as mock_pm, \
              patch("core.engine.send_alert", new_callable=AsyncMock):
-            mock_pm.best_ask = AsyncMock(return_value=0.10)
+            mock_pm.best_bid = AsyncMock(return_value=0.10)
             mock_pm.market_sell = AsyncMock(return_value=None)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
             assert risk.halted
+
+
+class TestQuickExit:
+    def _make_engine(self, queue, risk=None, cb=None):
+        from core.engine import SniperEngine
+        return SniperEngine(queue, risk=risk, circuit_breaker=cb)
+
+    @pytest.mark.asyncio
+    async def test_quick_exit_sells_at_threshold(self, event_queue):
+        risk = _make_risk()
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.98)
+
+        with patch("core.engine.polymarket") as mock_pm, \
+             patch("core.engine.settings") as mock_settings, \
+             patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.best_bid = AsyncMock(return_value=0.997)
+            mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_settings.trading.exit_sell_threshold = 0.995
+            mock_settings.trading.stop_loss_pct = 0.0
+
+            engine = self._make_engine(event_queue, risk=risk)
+            await engine._check_position_resolutions()
+
+            assert risk.open_positions == 0
+            mock_pm.market_sell.assert_called_once()
+            shares = mock_pm.market_sell.call_args[0][1]
+            assert shares == pytest.approx(50.0 / 0.98)
+            assert "Quick-Exit" in mock_alert.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_quick_exit_not_triggered_below_threshold(self, event_queue):
+        risk = _make_risk()
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.98)
+
+        with patch("core.engine.polymarket") as mock_pm, \
+             patch("core.engine.settings") as mock_settings, \
+             patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.best_bid = AsyncMock(return_value=0.990)
+            mock_settings.trading.exit_sell_threshold = 0.995
+            mock_settings.trading.stop_loss_pct = 0.0
+
+            engine = self._make_engine(event_queue, risk=risk)
+            await engine._check_position_resolutions()
+
+            assert risk.open_positions == 1
+            mock_alert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_quick_exit_pnl_positive(self, event_queue):
+        risk = _make_risk()
+        risk.record_trade("tok1", "market", "No", "c1", 10.0, 0.98)
+
+        with patch("core.engine.polymarket") as mock_pm, \
+             patch("core.engine.settings") as mock_settings, \
+             patch("core.engine.send_alert", new_callable=AsyncMock):
+            mock_pm.best_bid = AsyncMock(return_value=0.996)
+            mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_settings.trading.exit_sell_threshold = 0.995
+            mock_settings.trading.stop_loss_pct = 0.0
+
+            engine = self._make_engine(event_queue, risk=risk)
+            await engine._check_position_resolutions()
+
+            shares = 10.0 / 0.98
+            expected_pnl = shares * 0.996 - 10.0
+            assert risk.session_pnl == pytest.approx(expected_pnl)
+
+    @pytest.mark.asyncio
+    async def test_quick_exit_sell_failure_keeps_position(self, event_queue):
+        risk = _make_risk()
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.98)
+
+        with patch("core.engine.polymarket") as mock_pm, \
+             patch("core.engine.settings") as mock_settings, \
+             patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.best_bid = AsyncMock(return_value=0.997)
+            mock_pm.market_sell = AsyncMock(side_effect=Exception("API down"))
+            mock_settings.trading.exit_sell_threshold = 0.995
+            mock_settings.trading.stop_loss_pct = 0.0
+
+            engine = self._make_engine(event_queue, risk=risk)
+            await engine._check_position_resolutions()
+
+            assert risk.open_positions == 1
+            assert "Failed" in mock_alert.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_api_resolution_takes_priority_over_quick_exit(self, event_queue):
+        risk = _make_risk()
+        risk.record_trade("tok1", "market", "Yes", "c1", 50.0, 0.98, condition_id="c1")
+
+        with patch("core.engine.polymarket") as mock_pm, \
+             patch("core.engine.settings") as mock_settings, \
+             patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
+            mock_pm.get_market_resolution = AsyncMock(return_value="Yes")
+            mock_pm.best_bid = AsyncMock(return_value=0.997)
+            mock_settings.trading.exit_sell_threshold = 0.995
+            mock_settings.trading.stop_loss_pct = 0.0
+
+            engine = self._make_engine(event_queue, risk=risk)
+            await engine._check_position_resolutions()
+
+            assert risk.open_positions == 0
+            mock_pm.market_sell.assert_not_called()
+            assert "API" in mock_alert.call_args[0][0]
 
 
 class TestEngineCircuitBreakerIntegration:

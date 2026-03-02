@@ -121,6 +121,7 @@ async def main() -> None:
              cfg.sizing_mode, cfg.order_size_usdc, cfg.min_order_usdc, cfg.max_order_usdc)
     log.info("  Max positions: %d", cfg.max_open_positions)
     log.info("  Max exposure: $%.2f | Max session loss: $%.2f", cfg.max_total_exposure_usdc, cfg.max_session_loss_usdc)
+    log.info("  Quick-exit sell threshold: $%.3f", cfg.exit_sell_threshold)
     log.info("  Fee rate: %.1f%% | Stop-loss: %s", cfg.fee_rate * 100, f"{cfg.stop_loss_pct:.0%}" if cfg.stop_loss_pct > 0 else "disabled")
     log.info("  Rate limit: %.1f req/s (burst=%d)", cfg.api_rate_limit, cfg.api_rate_burst)
     log.info("  Dashboard: http://0.0.0.0:%d", cfg.dashboard_port)

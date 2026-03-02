@@ -228,6 +228,15 @@ class PolymarketClient:
         best = min(asks, key=lambda a: float(a.price if hasattr(a, "price") else a["price"]))
         return float(best.price if hasattr(best, "price") else best["price"])
 
+    async def best_bid(self, token_id: str) -> float | None:
+        """Return the highest bid price for a token, or None if empty."""
+        book = await self.get_order_book(token_id)
+        bids = getattr(book, "bids", None) or (book.get("bids", []) if isinstance(book, dict) else [])
+        if not bids:
+            return None
+        best = max(bids, key=lambda b: float(b.price if hasattr(b, "price") else b["price"]))
+        return float(best.price if hasattr(best, "price") else best["price"])
+
     async def get_market_resolution(self, condition_id: str) -> str | None:
         """
         Check if a market has officially resolved.
