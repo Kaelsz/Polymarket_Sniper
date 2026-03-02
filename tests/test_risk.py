@@ -106,17 +106,10 @@ class TestPositionLimits:
         assert not decision
         assert "Max open positions" in decision.reason
 
-    def test_blocks_at_max_per_game(self):
-        rm = RiskManager(_cfg(max_positions_per_game=1))
-        rm.record_trade("t1", "CS2", "A", "m1", 50.0, 0.6)
-        decision = rm.pre_trade_check("t2", "CS2", "B", "m2", 50.0, 0.5)
-        assert not decision
-        assert "CS2" in decision.reason
-
-    def test_different_game_allowed(self):
-        rm = RiskManager(_cfg(max_positions_per_game=1))
-        rm.record_trade("t1", "CS2", "A", "m1", 50.0, 0.6)
-        decision = rm.pre_trade_check("t2", "LoL", "B", "m2", 50.0, 0.5)
+    def test_allows_multiple_same_game(self):
+        rm = RiskManager(_cfg(max_open_positions=3))
+        rm.record_trade("t1", "market", "A", "m1", 50.0, 0.6)
+        decision = rm.pre_trade_check("t2", "market", "B", "m2", 50.0, 0.5)
         assert decision
 
     def test_close_position_frees_slot(self):

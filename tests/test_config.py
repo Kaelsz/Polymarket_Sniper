@@ -191,12 +191,6 @@ class TestValidateConfigTrading:
         errs = validate_config(_valid_settings(max_open_positions=0))
         assert any("MAX_OPEN_POSITIONS" in e for e in errs)
 
-    def test_positions_per_game_exceeds_total(self):
-        errs = validate_config(_valid_settings(
-            max_open_positions=3, max_positions_per_game=5,
-        ))
-        assert any("cannot exceed" in e for e in errs)
-
     def test_session_loss_zero(self):
         errs = validate_config(_valid_settings(max_session_loss_usdc=0.0))
         assert any("MAX_SESSION_LOSS_USDC" in e for e in errs)

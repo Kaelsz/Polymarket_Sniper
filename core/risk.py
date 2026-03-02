@@ -298,9 +298,6 @@ class RiskManager:
     def _check_position_limits(self, game: str) -> str:
         if self.open_positions >= self._cfg.max_open_positions:
             return f"Max open positions reached ({self.open_positions}/{self._cfg.max_open_positions})"
-        game_positions = sum(1 for p in self._positions if p.game == game)
-        if game_positions >= self._cfg.max_positions_per_game:
-            return f"Max positions for {game} reached ({game_positions}/{self._cfg.max_positions_per_game})"
         return ""
 
     def _check_exposure(self, amount_usdc: float) -> str:

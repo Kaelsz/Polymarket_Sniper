@@ -177,13 +177,7 @@ def validate_config(s: Settings) -> list[str]:
         errors.append(f"ORDER_SIZE_USDC must be > 0: got {t.order_size_usdc}")
     if t.max_open_positions < 1:
         errors.append(f"MAX_OPEN_POSITIONS must be >= 1: got {t.max_open_positions}")
-    if t.max_positions_per_game < 1:
-        errors.append(f"MAX_POSITIONS_PER_GAME must be >= 1: got {t.max_positions_per_game}")
-    if t.max_positions_per_game > t.max_open_positions:
-        errors.append(
-            f"MAX_POSITIONS_PER_GAME ({t.max_positions_per_game}) "
-            f"cannot exceed MAX_OPEN_POSITIONS ({t.max_open_positions})"
-        )
+    
     if t.max_session_loss_usdc <= 0:
         errors.append(f"MAX_SESSION_LOSS_USDC must be > 0: got {t.max_session_loss_usdc}")
     if t.max_total_exposure_usdc <= 0:
