@@ -102,7 +102,7 @@ class TestSniperEngineHandleOpportunity:
             engine = self._make_engine(event_queue, risk=risk)
             await engine._handle_opportunity(_opp(token_id="tok_yes_navi"))
 
-            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", pytest.approx(10.0 / 0.97))
+            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", pytest.approx(10.0 / 0.97), price=0.97)
             assert len(engine._trades) == 1
             assert engine._trades[0]["open_positions"] == 1
             assert engine._trades[0]["total_exposure"] == 10.0
@@ -220,7 +220,7 @@ class TestTradeLock:
     async def test_concurrent_same_opp_only_one_passes(self, event_queue):
         risk = _make_risk(dedup_window_seconds=300.0)
 
-        async def slow_buy(token_id, amount):
+        async def slow_buy(token_id, amount, **kwargs):
             await asyncio.sleep(0.05)
             return None
 
@@ -430,7 +430,7 @@ class TestMarketBuyErrorHandling:
 
         call_count = 0
 
-        async def fail_then_succeed(token_id, amount):
+        async def fail_then_succeed(token_id, amount, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

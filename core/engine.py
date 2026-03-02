@@ -162,7 +162,7 @@ class SniperEngine:
                 return
 
             try:
-                result = await polymarket.market_buy(opp.token_id, shares_to_buy)
+                result = await polymarket.market_buy(opp.token_id, shares_to_buy, price=ask)
             except Exception as exc:
                 log.error(
                     "ORDER FAILED for %s: %s", opp.question[:60], exc,

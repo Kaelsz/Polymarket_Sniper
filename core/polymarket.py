@@ -133,10 +133,10 @@ class PolymarketClient:
             None, lambda: self.client.get_order_book(token_id)
         )
 
-    async def market_buy(self, token_id: str, shares: float) -> dict | None:
-        """Place a market-buy order using shares quantity. Returns None in dry-run mode."""
+    async def market_buy(self, token_id: str, shares: float, price: float = 0.99) -> dict | None:
+        """Place a market-buy order using shares quantity at the given limit price."""
         if settings.trading.dry_run:
-            log.warning("[DRY RUN] Would buy %.4f shares of %s", shares, token_id)
+            log.warning("[DRY RUN] Would buy %.4f shares of %s @ $%.4f", shares, token_id, price)
             return None
 
         if not self._api_ready:
@@ -148,7 +148,7 @@ class PolymarketClient:
         order_args = OrderArgs(
             token_id=token_id,
             size=shares,
-            price=0.999,
+            price=price,
             side="BUY",
         )
         signed = await loop.run_in_executor(
