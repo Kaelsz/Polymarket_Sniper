@@ -66,6 +66,7 @@ class PositionRecord:
     match_id: str
     amount_usdc: float
     buy_price: float
+    shares: float = 0.0
     condition_id: str = ""
     timestamp: float = field(default_factory=time.time)
 
@@ -156,6 +157,7 @@ class RiskManager:
         match_id: str,
         amount_usdc: float,
         buy_price: float,
+        shares: float = 0.0,
         condition_id: str = "",
     ) -> None:
         """Record a successfully executed trade."""
@@ -167,6 +169,7 @@ class RiskManager:
             match_id=match_id,
             amount_usdc=amount_usdc,
             buy_price=buy_price,
+            shares=shares,
             condition_id=condition_id,
             timestamp=now,
         ))
@@ -219,7 +222,7 @@ class RiskManager:
         if pos is None:
             return None
 
-        shares = pos.amount_usdc / pos.buy_price
+        shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
         gross_pnl = shares * exit_price - pos.amount_usdc
 
         fees = 0.0
@@ -329,6 +332,7 @@ class RiskManager:
                     "match_id": p.match_id,
                     "amount_usdc": p.amount_usdc,
                     "buy_price": p.buy_price,
+                    "shares": p.shares,
                     "condition_id": p.condition_id,
                     "timestamp": p.timestamp,
                 }

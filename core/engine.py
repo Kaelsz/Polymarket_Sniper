@@ -142,9 +142,10 @@ class SniperEngine:
 
             amount = round(balance / available_slots, 2)
             amount = max(5.0, amount)
+            shares_to_buy = amount / ask
             log.info(
-                "SIZING  balance=$%.2f, slots=%d/%d → bet=$%.2f",
-                balance, open_pos, max_pos, amount,
+                "SIZING  balance=$%.2f, slots=%d/%d → bet=$%.2f (%.4f shares)",
+                balance, open_pos, max_pos, amount, shares_to_buy,
             )
 
             decision = self._risk.pre_trade_check(
@@ -161,7 +162,7 @@ class SniperEngine:
                 return
 
             try:
-                result = await polymarket.market_buy(opp.token_id, amount)
+                result = await polymarket.market_buy(opp.token_id, shares_to_buy)
             except Exception as exc:
                 log.error(
                     "ORDER FAILED for %s: %s", opp.question[:60], exc,
@@ -182,6 +183,7 @@ class SniperEngine:
                 match_id=opp.condition_id,
                 amount_usdc=amount,
                 buy_price=ask,
+                shares=shares_to_buy,
                 condition_id=opp.condition_id,
             )
 
@@ -305,7 +307,7 @@ class SniperEngine:
 
     async def _execute_quick_exit(self, pos: PositionRecord, bid_price: float) -> float | None:
         """Sell position at market when bid >= exit threshold. Capital recycled instantly."""
-        shares = pos.amount_usdc / pos.buy_price
+        shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
         log.info(
             "QUICK-EXIT  %s | bid=$%.4f (bought@$%.4f) | selling %.2f shares",
             pos.team, bid_price, pos.buy_price, shares,
@@ -313,6 +315,22 @@ class SniperEngine:
         try:
             await polymarket.market_sell(pos.token_id, shares)
         except Exception as exc:
+            fallback_shares = pos.amount_usdc
+            err = str(exc).lower()
+            if pos.shares <= 0 and "not enough balance / allowance" in err:
+                log.warning(
+                    "QUICK-EXIT retry with legacy shares fallback: %.2f",
+                    fallback_shares,
+                )
+                try:
+                    await polymarket.market_sell(pos.token_id, fallback_shares)
+                    pos.shares = fallback_shares
+                except Exception:
+                    pass
+                else:
+                    return self._risk.close_position_with_pnl(
+                        pos.token_id, bid_price, apply_fees=False, source="quick-exit",
+                    )
             log.error("QUICK-EXIT SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Quick-Exit Sell Failed\n"
@@ -325,10 +343,26 @@ class SniperEngine:
         )
 
     async def _execute_stop_loss(self, pos: PositionRecord, exit_price: float) -> float | None:
-        shares = pos.amount_usdc / pos.buy_price
+        shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
         try:
             await polymarket.market_sell(pos.token_id, shares)
         except Exception as exc:
+            fallback_shares = pos.amount_usdc
+            err = str(exc).lower()
+            if pos.shares <= 0 and "not enough balance / allowance" in err:
+                log.warning(
+                    "STOP-LOSS retry with legacy shares fallback: %.2f",
+                    fallback_shares,
+                )
+                try:
+                    await polymarket.market_sell(pos.token_id, fallback_shares)
+                    pos.shares = fallback_shares
+                except Exception:
+                    pass
+                else:
+                    return self._risk.close_position_with_pnl(
+                        pos.token_id, exit_price, apply_fees=False, source="stop-loss",
+                    )
             log.error("STOP-LOSS SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Stop-Loss Sell Failed\n"

@@ -102,7 +102,7 @@ class TestSniperEngineHandleOpportunity:
             engine = self._make_engine(event_queue, risk=risk)
             await engine._handle_opportunity(_opp(token_id="tok_yes_navi"))
 
-            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", 10.0)
+            mock_pm.market_buy.assert_called_once_with("tok_yes_navi", pytest.approx(10.0 / 0.97))
             assert len(engine._trades) == 1
             assert engine._trades[0]["open_positions"] == 1
             assert engine._trades[0]["total_exposure"] == 10.0
