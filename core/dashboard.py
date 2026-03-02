@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from core.engine import SniperEngine
     from core.rate_limiter import RateLimiter
     from core.risk import RiskManager
+    from core.ws_stream import PriceStream
 
 log = logging.getLogger("polysniper.dashboard")
 
@@ -27,6 +28,7 @@ _risk_key: web.AppKey[RiskManager] = web.AppKey("risk")
 _cb_key: web.AppKey[CircuitBreaker | None] = web.AppKey("cb")
 _engine_key: web.AppKey[SniperEngine] = web.AppKey("engine")
 _limiter_key: web.AppKey[RateLimiter | None] = web.AppKey("limiter")
+_ws_key: web.AppKey[PriceStream | None] = web.AppKey("ws_stream")
 
 _START_TIME: float = time.time()
 
@@ -43,6 +45,7 @@ def _build_status(
     cb: CircuitBreaker | None,
     engine: SniperEngine,
     limiter: RateLimiter | None = None,
+    ws_stream: PriceStream | None = None,
 ) -> dict:
     positions = []
     for p in risk._positions:
@@ -100,6 +103,7 @@ def _build_status(
         "adapters": adapters,
         "trade_count": len(engine._trades),
         "rate_limiter": limiter.stats if limiter else None,
+        "websocket": ws_stream.stats if ws_stream else None,
     }
 
 
@@ -109,6 +113,7 @@ async def _handle_status(request: web.Request) -> web.Response:
         request.app[_cb_key],
         request.app[_engine_key],
         request.app[_limiter_key],
+        request.app[_ws_key],
     )
     return web.json_response(status)
 
@@ -221,6 +226,16 @@ _HTML_TEMPLATE = """\
 </div>
 
 <div class="section">
+  <h2>WebSocket Stream</h2>
+  <div class="grid" style="margin-bottom:0">
+    <div class="card"><div class="label">WS Status</div><div class="value" id="ws-status">--</div></div>
+    <div class="card"><div class="label">Subscribed</div><div class="value neutral" id="ws-subscribed">0</div></div>
+    <div class="card"><div class="label">Events Recv</div><div class="value neutral" id="ws-events">0</div></div>
+    <div class="card"><div class="label">WS Signals</div><div class="value neutral" id="ws-opps">0</div></div>
+  </div>
+</div>
+
+<div class="section">
   <h2>Scanner</h2>
   <table>
     <thead><tr><th>Feed</th><th>State</th><th>Events</th><th>Failures</th><th>Last Event</th></tr></thead>
@@ -288,6 +303,17 @@ async function refresh() {
     const statusEl = document.getElementById('status');
     statusEl.textContent = halted ? 'HALTED' : 'RUNNING';
     statusEl.className = 'value ' + (halted ? 'negative' : 'positive');
+
+    // WebSocket stats
+    if (st.websocket) {
+      const ws = st.websocket;
+      const wsEl = document.getElementById('ws-status');
+      wsEl.textContent = ws.ws_connected ? 'LIVE' : 'OFFLINE';
+      wsEl.className = 'value ' + (ws.ws_connected ? 'positive' : 'negative');
+      document.getElementById('ws-subscribed').textContent = ws.ws_subscribed;
+      document.getElementById('ws-events').textContent = ws.ws_events;
+      document.getElementById('ws-opps').textContent = ws.ws_opportunities;
+    }
 
     // Adapters
     const ab = document.getElementById('adapters-body');
@@ -363,6 +389,7 @@ def create_dashboard_app(
     cb: CircuitBreaker | None,
     engine: SniperEngine,
     limiter: RateLimiter | None = None,
+    ws_stream: PriceStream | None = None,
 ) -> web.Application:
     """Create and return the aiohttp dashboard application."""
     global _START_TIME
@@ -373,6 +400,7 @@ def create_dashboard_app(
     app[_cb_key] = cb
     app[_engine_key] = engine
     app[_limiter_key] = limiter
+    app[_ws_key] = ws_stream
 
     app.router.add_get("/", _handle_index)
     app.router.add_get("/api/status", _handle_status)
@@ -387,9 +415,10 @@ async def start_dashboard(
     engine: SniperEngine,
     port: int = 8080,
     limiter: RateLimiter | None = None,
+    ws_stream: PriceStream | None = None,
 ) -> web.AppRunner:
     """Start the dashboard HTTP server as a background task."""
-    app = create_dashboard_app(risk, cb, engine, limiter=limiter)
+    app = create_dashboard_app(risk, cb, engine, limiter=limiter, ws_stream=ws_stream)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)

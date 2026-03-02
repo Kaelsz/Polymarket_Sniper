@@ -27,6 +27,7 @@ from core.rate_limiter import RateLimiter
 from core.risk import RiskConfig, RiskManager
 from core.scanner import MarketScanner, Opportunity
 from core.sizing import OrderSizer, SizingConfig
+from core.ws_stream import PriceStream
 from utils.alerts import alert_crash, send_alert
 
 LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
@@ -124,6 +125,7 @@ async def main() -> None:
     log.info("  Quick-exit sell threshold: $%.3f", cfg.exit_sell_threshold)
     log.info("  Fee rate: %.1f%% | Stop-loss: %s", cfg.fee_rate * 100, f"{cfg.stop_loss_pct:.0%}" if cfg.stop_loss_pct > 0 else "disabled")
     log.info("  Rate limit: %.1f req/s (burst=%d)", cfg.api_rate_limit, cfg.api_rate_burst)
+    log.info("  WebSocket: ENABLED (real-time price stream)")
     log.info("  Dashboard: http://0.0.0.0:%d", cfg.dashboard_port)
     log.info("=" * 60)
 
@@ -143,7 +145,13 @@ async def main() -> None:
 
     opp_queue: asyncio.Queue[Opportunity] = asyncio.Queue()
 
-    scanner = MarketScanner(opp_queue, circuit_breaker=cb)
+    ws_stream = PriceStream(opp_queue)
+
+    scanner = MarketScanner(
+        opp_queue,
+        circuit_breaker=cb,
+        on_eligible_update=ws_stream.update_markets,
+    )
     cb.register(scanner.GAME)
 
     sizer = OrderSizer(SizingConfig(
@@ -168,10 +176,14 @@ async def main() -> None:
         claimer=claimer,
     )
 
-    dashboard_runner = await start_dashboard(risk, cb, engine, port=cfg.dashboard_port, limiter=limiter)
+    dashboard_runner = await start_dashboard(
+        risk, cb, engine, port=cfg.dashboard_port,
+        limiter=limiter, ws_stream=ws_stream,
+    )
 
     tasks = [
         asyncio.create_task(scanner.run(), name="Scanner"),
+        asyncio.create_task(ws_stream.run(), name="PriceStream"),
         asyncio.create_task(engine.run(), name="Engine"),
         asyncio.create_task(cb.monitor_loop(), name="CircuitBreaker"),
     ]
@@ -180,6 +192,7 @@ async def main() -> None:
         log.info("Shutdown signal received — saving state and stopping...")
         state_store.save(risk)
         scanner.stop()
+        ws_stream.stop()
         for t in tasks:
             t.cancel()
 

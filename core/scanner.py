@@ -3,6 +3,9 @@ Market Scanner — Monitors all Polymarket markets for near-resolution opportuni
 
 Polls the Gamma API for active markets, pre-filters by volume / end-date /
 indicative price, and feeds opportunities to the engine for CLOB verification.
+
+Also exports eligible market metadata to the WebSocket PriceStream so it
+can subscribe to real-time price updates for those markets.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 import aiohttp
 
@@ -53,6 +57,7 @@ class MarketScanner:
         circuit_breaker: object | None = None,
         scan_interval: float | None = None,
         min_volume: float | None = None,
+        on_eligible_update: Callable[[dict], None] | None = None,
     ) -> None:
         self._queue = queue
         self._cb = circuit_breaker
@@ -65,6 +70,7 @@ class MarketScanner:
         self._last_scan_candidates = 0
         self._total_opportunities = 0
         self._cycle_count = 0
+        self._on_eligible_update = on_eligible_update
 
     @property
     def stats(self) -> dict:
@@ -126,8 +132,14 @@ class MarketScanner:
         markets = await self._fetch_markets()
         self._last_scan_markets = len(markets)
 
-        candidates = self._pre_filter(markets)
+        candidates, eligible = self._pre_filter(markets)
         self._last_scan_candidates = len(candidates)
+
+        if self._on_eligible_update and eligible:
+            try:
+                self._on_eligible_update(eligible)
+            except Exception as exc:
+                log.debug("WS eligible update error: %s", exc)
 
         new_opps = 0
         skipped_seen = 0
@@ -159,9 +171,9 @@ class MarketScanner:
 
         elapsed = (time.perf_counter() - t0) * 1000
         log.info(
-            "Scan #%d: %d markets, %d candidates, %d new, %d cooldown (%.0fms)",
+            "Scan #%d: %d markets, %d candidates, %d new, %d cooldown, %d ws-eligible (%.0fms)",
             self._cycle_count, len(markets), len(candidates),
-            new_opps, skipped_seen, elapsed,
+            new_opps, skipped_seen, len(eligible), elapsed,
         )
 
     async def _fetch_markets(self) -> list[dict]:
@@ -208,9 +220,18 @@ class MarketScanner:
         except (ValueError, TypeError):
             return None
 
-    def _pre_filter(self, markets: list[dict]) -> list[dict]:
-        """Pre-filter markets by volume, end date, and indicative price."""
+    def _pre_filter(self, markets: list[dict]) -> tuple[list[dict], dict]:
+        """Pre-filter markets by volume, end date, and indicative price.
+
+        Returns:
+            (candidates, eligible) where candidates are tokens in the price
+            window and eligible is a dict[token_id -> MarketMeta-like dict]
+            for ALL tokens passing volume/date filters (for WS subscription).
+        """
+        from core.ws_stream import MarketMeta
+
         candidates: list[dict] = []
+        eligible: dict[str, MarketMeta] = {}
         min_price = settings.trading.min_buy_price
         max_price = settings.trading.max_buy_price
         now = datetime.now(timezone.utc)
@@ -257,6 +278,16 @@ class MarketScanner:
                 except (ValueError, TypeError):
                     continue
 
+                eligible[tid] = MarketMeta(
+                    condition_id=condition_id,
+                    token_id=tid,
+                    question=question,
+                    outcome=outcome,
+                    volume=volume,
+                    end_date=end_date,
+                    market_slug=slug,
+                )
+
                 if min_price <= price <= max_price:
                     candidates.append({
                         "condition_id": condition_id,
@@ -269,7 +300,7 @@ class MarketScanner:
                         "slug": slug,
                     })
 
-        return candidates
+        return candidates, eligible
 
     def clear_seen(self, token_id: str) -> None:
         """Remove a token from the seen set so it can be re-evaluated."""
