@@ -157,6 +157,7 @@ class SniperEngine:
             )
             if not decision:
                 log.warning("RISK VETO: %s", decision.reason)
+                self._reject(opp.token_id)
                 return
 
             try:

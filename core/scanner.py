@@ -24,7 +24,7 @@ log = logging.getLogger("polysniper.scanner")
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 _HEADERS = {"User-Agent": "PolySniper/2.0"}
 
-_SEEN_TTL_SECONDS: float = 300.0
+_SEEN_TTL_SECONDS: float = 60.0
 
 
 @dataclass(frozen=True, slots=True)
