@@ -378,21 +378,18 @@ class SniperEngine:
                         return self._risk.close_position_with_pnl(
                             pos.token_id, bid_price, apply_fees=False, source="quick-exit",
                         )
-                # Can't sell, can't confirm resolution → ghost position, remove it
+                # Can't sell and not resolved yet — leave in state, retry next cycle
                 log.warning(
-                    "QUICK-EXIT ghost: %s | cannot sell, resolution unknown — removing from state",
+                    "QUICK-EXIT sell blocked: %s | market not resolved yet — will retry",
                     pos.team,
                 )
-                self._risk.close_position_with_pnl(
-                    pos.token_id, pos.buy_price, apply_fees=False, source="ghost",
-                )
                 await send_alert(
-                    f"Ghost Position Removed\n"
+                    f"Quick-Exit Blocked (will retry)\n"
                     f"Market: {pos.team}\n"
-                    f"Bought@${pos.buy_price:.4f}\n"
-                    f"Cannot sell (no balance). Position removed from state."
+                    f"Bought@${pos.buy_price:.4f} | shares={pos.shares:.2f}\n"
+                    f"Sell failed, market not yet resolved. Retrying next cycle."
                 )
-                return 0.0
+                return None
             log.error("QUICK-EXIT SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Quick-Exit Sell Failed\n"
@@ -429,15 +426,12 @@ class SniperEngine:
                         return self._risk.close_position_with_pnl(
                             pos.token_id, exit_price, apply_fees=False, source="stop-loss",
                         )
-                # Ghost: can't sell, remove from state
+                # Can't sell and not resolved yet — leave in state, retry next cycle
                 log.warning(
-                    "STOP-LOSS ghost: %s | cannot sell — removing from state",
+                    "STOP-LOSS sell blocked: %s | market not resolved yet — will retry",
                     pos.team,
                 )
-                self._risk.close_position_with_pnl(
-                    pos.token_id, pos.buy_price, apply_fees=False, source="ghost",
-                )
-                return 0.0
+                return None
             log.error("STOP-LOSS SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Stop-Loss Sell Failed\n"
