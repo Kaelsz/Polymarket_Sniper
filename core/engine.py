@@ -161,6 +161,7 @@ class SniperEngine:
                 self._reject(opp.token_id)
                 return
 
+            balance_before = await polymarket.get_balance_usdc()
             try:
                 result = await polymarket.market_buy(opp.token_id, shares_to_buy, price=ask)
             except Exception as exc:
@@ -176,14 +177,30 @@ class SniperEngine:
                 self._reject(opp.token_id)
                 return
 
+            # Compute actual fill from balance delta to handle partial fills
+            balance_after = await polymarket.get_balance_usdc()
+            actual_usdc = round(balance_before - balance_after, 4)
+            if actual_usdc <= 0:
+                log.warning(
+                    "ORDER may not have filled (balance delta=%.4f) — using intended size",
+                    actual_usdc,
+                )
+                actual_usdc = amount
+            actual_shares = actual_usdc / ask
+            if abs(actual_usdc - amount) > 1.0:
+                log.warning(
+                    "PARTIAL FILL detected: intended=$%.2f actual=$%.2f (%.1f%% filled)",
+                    amount, actual_usdc, 100 * actual_usdc / amount,
+                )
+
             self._risk.record_trade(
                 token_id=opp.token_id,
                 game="market",
                 team=opp.outcome,
                 match_id=opp.condition_id,
-                amount_usdc=amount,
+                amount_usdc=actual_usdc,
                 buy_price=ask,
-                shares=shares_to_buy,
+                shares=actual_shares,
                 condition_id=opp.condition_id,
             )
 
@@ -195,7 +212,7 @@ class SniperEngine:
             "team": opp.outcome,
             "market": opp.question,
             "ask_price": ask,
-            "amount": amount,
+            "amount": actual_usdc,
             "latency_ms": round(latency_ms, 1),
             "dry_run": settings.trading.dry_run,
             "result": result,
@@ -205,12 +222,13 @@ class SniperEngine:
         self._trades.append(trade_info)
 
         mode = "DRY RUN" if settings.trading.dry_run else "LIVE"
+        fill_note = f" ⚠️ partial fill" if actual_usdc < amount * 0.9 else ""
         msg = (
             f"[{mode}] Trade executed\n"
             f"Market: {opp.question}\n"
             f"Outcome: {opp.outcome}\n"
             f"Ask: ${ask:.4f}\n"
-            f"Size: ${amount:.2f}\n"
+            f"Size: ${actual_usdc:.2f}{fill_note}\n"
             f"Latency: {latency_ms:.1f}ms\n"
             f"Volume: ${opp.volume/1000:.0f}K\n"
             f"Positions: {self._risk.open_positions} | "
