@@ -205,7 +205,7 @@ class SniperEngine:
             "team": opp.outcome,
             "market": opp.question,
             "ask_price": ask,
-            "amount": actual_usdc,
+            "amount": amount,
             "latency_ms": round(latency_ms, 1),
             "dry_run": settings.trading.dry_run,
             "result": result,
