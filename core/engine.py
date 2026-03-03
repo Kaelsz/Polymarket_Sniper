@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("polysniper.engine")
 
-POSITION_MONITOR_INTERVAL: float = 30.0
+POSITION_MONITOR_INTERVAL: float = 10.0
 RESOLUTION_WIN_THRESHOLD: float = 1.0
 RESOLUTION_LOSS_THRESHOLD: float = 0.01
 STALE_CYCLES_THRESHOLD: int = 60
@@ -305,6 +305,31 @@ class SniperEngine:
         trigger_price = pos.buy_price * (1.0 - sl)
         return current_price < trigger_price
 
+    async def _check_resolved_fallback(self, pos: PositionRecord) -> float | None:
+        """Re-check resolution when a sell fails — market may have resolved on-chain."""
+        if not pos.condition_id:
+            return None
+        try:
+            outcome = await polymarket.get_market_resolution(pos.condition_id)
+            if outcome is not None:
+                won = outcome.lower() == pos.team.lower()
+                resolution_price = 1.0 if won else 0.0
+                log.info(
+                    "SELL FAILED → market already resolved: %s (%s)",
+                    outcome, "WIN" if won else "LOSS",
+                )
+                pnl = self._risk.close_position_with_pnl(
+                    pos.token_id, resolution_price, source="resolution",
+                )
+                if pnl is not None and won and self._claimer:
+                    await self._auto_redeem(pos)
+                if pnl is not None:
+                    await self._alert_position_closed(pos, pnl, "resolution")
+                return pnl
+        except Exception as exc:
+            log.debug("Resolution fallback check failed: %s", exc)
+        return None
+
     async def _execute_quick_exit(self, pos: PositionRecord, bid_price: float) -> float | None:
         """Sell position at market when bid >= exit threshold. Capital recycled instantly."""
         shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
@@ -315,22 +340,26 @@ class SniperEngine:
         try:
             await polymarket.market_sell(pos.token_id, shares)
         except Exception as exc:
-            fallback_shares = pos.amount_usdc
             err = str(exc).lower()
-            if pos.shares <= 0 and "not enough balance / allowance" in err:
-                log.warning(
-                    "QUICK-EXIT retry with legacy shares fallback: %.2f",
-                    fallback_shares,
-                )
-                try:
-                    await polymarket.market_sell(pos.token_id, fallback_shares)
-                    pos.shares = fallback_shares
-                except Exception:
-                    pass
-                else:
-                    return self._risk.close_position_with_pnl(
-                        pos.token_id, bid_price, apply_fees=False, source="quick-exit",
+            if "not enough balance / allowance" in err:
+                resolved_pnl = await self._check_resolved_fallback(pos)
+                if resolved_pnl is not None:
+                    return resolved_pnl
+                if pos.shares <= 0:
+                    fallback_shares = pos.amount_usdc
+                    log.warning(
+                        "QUICK-EXIT retry with legacy shares fallback: %.2f",
+                        fallback_shares,
                     )
+                    try:
+                        await polymarket.market_sell(pos.token_id, fallback_shares)
+                        pos.shares = fallback_shares
+                    except Exception:
+                        pass
+                    else:
+                        return self._risk.close_position_with_pnl(
+                            pos.token_id, bid_price, apply_fees=False, source="quick-exit",
+                        )
             log.error("QUICK-EXIT SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Quick-Exit Sell Failed\n"
@@ -347,22 +376,26 @@ class SniperEngine:
         try:
             await polymarket.market_sell(pos.token_id, shares)
         except Exception as exc:
-            fallback_shares = pos.amount_usdc
             err = str(exc).lower()
-            if pos.shares <= 0 and "not enough balance / allowance" in err:
-                log.warning(
-                    "STOP-LOSS retry with legacy shares fallback: %.2f",
-                    fallback_shares,
-                )
-                try:
-                    await polymarket.market_sell(pos.token_id, fallback_shares)
-                    pos.shares = fallback_shares
-                except Exception:
-                    pass
-                else:
-                    return self._risk.close_position_with_pnl(
-                        pos.token_id, exit_price, apply_fees=False, source="stop-loss",
+            if "not enough balance / allowance" in err:
+                resolved_pnl = await self._check_resolved_fallback(pos)
+                if resolved_pnl is not None:
+                    return resolved_pnl
+                if pos.shares <= 0:
+                    fallback_shares = pos.amount_usdc
+                    log.warning(
+                        "STOP-LOSS retry with legacy shares fallback: %.2f",
+                        fallback_shares,
                     )
+                    try:
+                        await polymarket.market_sell(pos.token_id, fallback_shares)
+                        pos.shares = fallback_shares
+                    except Exception:
+                        pass
+                    else:
+                        return self._risk.close_position_with_pnl(
+                            pos.token_id, exit_price, apply_fees=False, source="stop-loss",
+                        )
             log.error("STOP-LOSS SELL FAILED: %s: %s", pos.team, exc)
             await send_alert(
                 f"Stop-Loss Sell Failed\n"
