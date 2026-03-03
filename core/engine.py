@@ -98,13 +98,15 @@ class SniperEngine:
             return
 
         try:
-            ask = await polymarket.best_ask(opp.token_id)
+            ask, available_shares = await polymarket.available_liquidity(
+                opp.token_id, settings.trading.max_buy_price
+            )
         except Exception as exc:
             log.warning("CLOB error for token %s: %s", opp.token_id[:12], exc)
             self._reject(opp.token_id)
             return
 
-        if ask is None:
+        if ask == 0.0 or available_shares == 0.0:
             log.warning("Empty order book for token %s", opp.token_id[:12])
             self._reject(opp.token_id)
             return
@@ -142,10 +144,18 @@ class SniperEngine:
 
             amount = round(balance / available_slots, 2)
             amount = max(5.0, amount)
-            shares_to_buy = amount / ask
+            # Cap to available liquidity in the order book to prevent partial fills
+            shares_to_buy = min(amount / ask, available_shares)
+            actual_amount = round(shares_to_buy * ask, 2)
+            if actual_amount < amount - 0.01:
+                log.warning(
+                    "LIQUIDITY CAP: wanted=$%.2f available=$%.2f (%.1f%% of book) for '%s'",
+                    amount, actual_amount, 100 * actual_amount / amount, opp.question[:50],
+                )
+            amount = actual_amount
             log.info(
-                "SIZING  balance=$%.2f, slots=%d/%d → bet=$%.2f (%.4f shares)",
-                balance, open_pos, max_pos, amount, shares_to_buy,
+                "SIZING  balance=$%.2f, slots=%d/%d → bet=$%.2f (%.4f shares, book=%.2f)",
+                balance, open_pos, max_pos, amount, shares_to_buy, available_shares,
             )
 
             decision = self._risk.pre_trade_check(
@@ -161,7 +171,6 @@ class SniperEngine:
                 self._reject(opp.token_id)
                 return
 
-            balance_before = await polymarket.get_balance_usdc()
             try:
                 result = await polymarket.market_buy(opp.token_id, shares_to_buy, price=ask)
             except Exception as exc:
@@ -177,30 +186,14 @@ class SniperEngine:
                 self._reject(opp.token_id)
                 return
 
-            # Compute actual fill from balance delta to handle partial fills
-            balance_after = await polymarket.get_balance_usdc()
-            actual_usdc = round(balance_before - balance_after, 4)
-            if actual_usdc <= 0:
-                log.warning(
-                    "ORDER may not have filled (balance delta=%.4f) — using intended size",
-                    actual_usdc,
-                )
-                actual_usdc = amount
-            actual_shares = actual_usdc / ask
-            if abs(actual_usdc - amount) > 1.0:
-                log.warning(
-                    "PARTIAL FILL detected: intended=$%.2f actual=$%.2f (%.1f%% filled)",
-                    amount, actual_usdc, 100 * actual_usdc / amount,
-                )
-
             self._risk.record_trade(
                 token_id=opp.token_id,
                 game="market",
                 team=opp.outcome,
                 match_id=opp.condition_id,
-                amount_usdc=actual_usdc,
+                amount_usdc=amount,
                 buy_price=ask,
-                shares=actual_shares,
+                shares=shares_to_buy,
                 condition_id=opp.condition_id,
             )
 
@@ -222,13 +215,12 @@ class SniperEngine:
         self._trades.append(trade_info)
 
         mode = "DRY RUN" if settings.trading.dry_run else "LIVE"
-        fill_note = f" ⚠️ partial fill" if actual_usdc < amount * 0.9 else ""
         msg = (
             f"[{mode}] Trade executed\n"
             f"Market: {opp.question}\n"
             f"Outcome: {opp.outcome}\n"
             f"Ask: ${ask:.4f}\n"
-            f"Size: ${actual_usdc:.2f}{fill_note}\n"
+            f"Size: ${amount:.2f}\n"
             f"Latency: {latency_ms:.1f}ms\n"
             f"Volume: ${opp.volume/1000:.0f}K\n"
             f"Positions: {self._risk.open_positions} | "

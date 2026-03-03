@@ -228,6 +228,27 @@ class PolymarketClient:
         best = min(asks, key=lambda a: float(a.price if hasattr(a, "price") else a["price"]))
         return float(best.price if hasattr(best, "price") else best["price"])
 
+    async def available_liquidity(self, token_id: str, max_price: float) -> tuple[float, float]:
+        """
+        Return (best_ask_price, total_shares_available) at or below max_price.
+        Reads the live order book to prevent partial fills.
+        """
+        book = await self.get_order_book(token_id)
+        asks = getattr(book, "asks", None) or (book.get("asks", []) if isinstance(book, dict) else [])
+        if not asks:
+            return 0.0, 0.0
+
+        def _f(entry: Any, attr: str) -> float:
+            return float(getattr(entry, attr) if hasattr(entry, attr) else entry[attr])
+
+        eligible = [a for a in asks if _f(a, "price") <= max_price]
+        if not eligible:
+            return 0.0, 0.0
+
+        best_price = min(_f(a, "price") for a in eligible)
+        total_shares = sum(_f(a, "size") for a in eligible)
+        return best_price, total_shares
+
     async def best_bid(self, token_id: str) -> float | None:
         """Return the highest bid price for a token, or None if empty."""
         book = await self.get_order_book(token_id)
