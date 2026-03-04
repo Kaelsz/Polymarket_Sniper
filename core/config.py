@@ -134,6 +134,9 @@ class TradingConfig:
     api_rate_burst: int = field(
         default_factory=lambda: int(os.getenv("API_RATE_BURST", "10"))
     )
+    question_filter: str = field(
+        default_factory=lambda: os.getenv("QUESTION_FILTER", "")
+    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -84,13 +84,15 @@ class MarketScanner:
     async def run(self) -> None:
         self._running = True
         self._session = aiohttp.ClientSession(headers=_HEADERS)
+        q_filter = settings.trading.question_filter
         log.info(
-            "Scanner started — interval=%ds, volume>=$%.0fK, price=[%.2f–%.2f], end<=%.0fh",
+            "Scanner started — interval=%ds, volume>=$%.0fK, price=[%.2f–%.2f], end<=%.0fh%s",
             self._scan_interval,
             self._min_volume / 1000,
             settings.trading.min_buy_price,
             settings.trading.max_buy_price,
             settings.trading.max_end_hours,
+            f", filter='{q_filter}'" if q_filter else "",
         )
         try:
             while self._running:
@@ -270,6 +272,10 @@ class MarketScanner:
             end_date = m.get("endDate", "") or m.get("end_date_iso", "") or ""
 
             if not self._question_date_ok(question, max_end_seconds / 3600):
+                continue
+
+            q_filter = settings.trading.question_filter
+            if q_filter and q_filter.lower() not in question.lower():
                 continue
 
             for price_s, tid, outcome in zip(prices, token_ids, outcomes):
