@@ -628,6 +628,8 @@ class TestStopLoss:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_bid = AsyncMock(return_value=0.25)
             mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.60)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -648,6 +650,8 @@ class TestStopLoss:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_bid = AsyncMock(return_value=0.20)
             mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.60)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -692,6 +696,8 @@ class TestStopLoss:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_bid = AsyncMock(return_value=0.20)
             mock_pm.market_sell = AsyncMock(side_effect=Exception("API down"))
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.60)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -726,6 +732,8 @@ class TestStopLoss:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_bid = AsyncMock(return_value=0.10)
             mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.60)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
 
             engine = self._make_engine(event_queue, risk=risk)
             await engine._check_position_resolutions()
@@ -747,6 +755,8 @@ class TestQuickExit:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_bid = AsyncMock(return_value=0.997)
             mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.98)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
             mock_settings.trading.exit_sell_threshold = 0.995
             mock_settings.trading.stop_loss_pct = 0.0
 
@@ -787,6 +797,8 @@ class TestQuickExit:
              patch("core.engine.send_alert", new_callable=AsyncMock):
             mock_pm.best_bid = AsyncMock(return_value=0.996)
             mock_pm.market_sell = AsyncMock(return_value=None)
+            mock_pm.get_token_balance = AsyncMock(return_value=10.0 / 0.98)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
             mock_settings.trading.exit_sell_threshold = 0.995
             mock_settings.trading.stop_loss_pct = 0.0
 
@@ -807,6 +819,8 @@ class TestQuickExit:
              patch("core.engine.send_alert", new_callable=AsyncMock) as mock_alert:
             mock_pm.best_bid = AsyncMock(return_value=0.997)
             mock_pm.market_sell = AsyncMock(side_effect=Exception("API down"))
+            mock_pm.get_token_balance = AsyncMock(return_value=50.0 / 0.98)
+            mock_pm.cancel_orders_for_token = AsyncMock(return_value=0)
             mock_settings.trading.exit_sell_threshold = 0.995
             mock_settings.trading.stop_loss_pct = 0.0
 

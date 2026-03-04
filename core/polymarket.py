@@ -202,6 +202,66 @@ class PolymarketClient:
             log.warning("Failed to fetch CLOB balance: %s", exc)
             return 0.0
 
+    async def get_token_balance(self, token_id: str) -> float:
+        """
+        Fetch the exact number of shares held for a specific conditional token.
+        This is the ground truth from the CLOB — ignores local state entirely.
+        Returns shares as a float (6-decimal precision).
+        """
+        if not self._api_ready:
+            return 0.0
+        try:
+            await self._throttle()
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.client.get_balance_allowance(
+                    BalanceAllowanceParams(
+                        asset_type=AssetType.CONDITIONAL,
+                        token_id=token_id,
+                    )
+                ),
+            )
+            raw = result.get("balance", "0") if isinstance(result, dict) else getattr(result, "balance", "0")
+            return int(raw) / 1e6
+        except Exception as exc:
+            log.warning("Failed to fetch token balance for %s: %s", token_id[:16], exc)
+            return -1.0  # sentinel: distinguish "0 shares" from "fetch failed"
+
+    async def cancel_orders_for_token(self, token_id: str) -> int:
+        """
+        Cancel all open orders (any side) for a specific token.
+        Returns the number of orders cancelled.
+        """
+        if not self._api_ready:
+            return 0
+        try:
+            await self._throttle()
+            loop = asyncio.get_running_loop()
+            orders = await loop.run_in_executor(None, lambda: self.client.get_orders())
+            if not orders:
+                return 0
+
+            to_cancel = [
+                o for o in orders
+                if (o.get("asset_id") == token_id or o.get("token_id") == token_id)
+            ]
+            count = 0
+            for order in to_cancel:
+                order_id = order.get("id") or order.get("order_id")
+                if order_id:
+                    try:
+                        await loop.run_in_executor(
+                            None, lambda oid=order_id: self.client.cancel(oid)
+                        )
+                        count += 1
+                    except Exception as exc:
+                        log.warning("Failed to cancel order %s: %s", order_id[:16], exc)
+            return count
+        except Exception as exc:
+            log.warning("cancel_orders_for_token failed: %s", exc)
+            return 0
+
     async def refresh_balance(self) -> None:
         """Force the CLOB to re-check on-chain balance (call after redeem/claim)."""
         if not self._api_ready:

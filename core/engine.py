@@ -340,98 +340,82 @@ class SniperEngine:
             log.debug("Resolution fallback check failed: %s", exc)
         return None
 
-    async def _execute_quick_exit(self, pos: PositionRecord, bid_price: float) -> float | None:
-        """Sell position at market when bid >= exit threshold. Capital recycled instantly."""
-        shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
-        log.info(
-            "QUICK-EXIT  %s | bid=$%.4f (bought@$%.4f) | selling %.2f shares",
-            pos.team, bid_price, pos.buy_price, shares,
-        )
+    async def _sell_position(
+        self, pos: PositionRecord, exit_price: float, source: str
+    ) -> float | None:
+        """
+        Cancel → Fetch True Balance → Sell Exact Amount pipeline.
+
+        1. Cancel any open orders for this token (clean slate)
+        2. Query the actual shares held on the CLOB (ground truth)
+        3. Sell exactly that amount — never rely on local state shares
+        4. If balance is 0, position already closed — clean up silently
+        """
+        # Step 1: cancel open orders to free up any locked shares
         try:
-            await polymarket.market_sell(pos.token_id, shares)
+            cancelled = await polymarket.cancel_orders_for_token(pos.token_id)
+            if cancelled > 0:
+                log.info("SELL PREP %s: cancelled %d open order(s)", pos.team, cancelled)
         except Exception as exc:
-            err = str(exc).lower()
-            if "not enough balance / allowance" in err:
-                resolved_pnl = await self._check_resolved_fallback(pos)
-                if resolved_pnl is not None:
-                    return resolved_pnl
-                if pos.shares <= 0:
-                    fallback_shares = pos.amount_usdc
-                    log.warning(
-                        "QUICK-EXIT retry with legacy shares fallback: %.2f",
-                        fallback_shares,
-                    )
-                    try:
-                        await polymarket.market_sell(pos.token_id, fallback_shares)
-                        pos.shares = fallback_shares
-                    except Exception:
-                        pass
-                    else:
-                        return self._risk.close_position_with_pnl(
-                            pos.token_id, bid_price, apply_fees=False, source="quick-exit",
-                        )
-                # Can't sell and not resolved yet — leave in state, retry next cycle
-                log.warning(
-                    "QUICK-EXIT sell blocked: %s | market not resolved yet — will retry",
-                    pos.team,
-                )
-                await send_alert(
-                    f"Quick-Exit Blocked (will retry)\n"
-                    f"Market: {pos.team}\n"
-                    f"Bought@${pos.buy_price:.4f} | shares={pos.shares:.2f}\n"
-                    f"Sell failed, market not yet resolved. Retrying next cycle."
-                )
-                return None
-            log.error("QUICK-EXIT SELL FAILED: %s: %s", pos.team, exc)
-            await send_alert(
-                f"Quick-Exit Sell Failed\n"
-                f"Market: {pos.team}\n"
-                f"Error: {exc}"
+            log.warning("SELL PREP %s: cancel failed (continuing): %s", pos.team, exc)
+
+        # Step 2: fetch true balance from CLOB
+        true_shares = await polymarket.get_token_balance(pos.token_id)
+
+        if true_shares < 0:
+            # fetch failed — fall back to local state to not block exit
+            log.warning(
+                "SELL %s: balance fetch failed, using state shares=%.4f",
+                pos.team, pos.shares,
             )
-            return None
-        return self._risk.close_position_with_pnl(
-            pos.token_id, bid_price, apply_fees=False, source="quick-exit",
+            true_shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
+        elif true_shares == 0.0:
+            # Step 4 safety: position already closed externally
+            log.info("SELL %s: CLOB balance is 0 — position already closed, cleaning state", pos.team)
+            return self._risk.close_position_with_pnl(
+                pos.token_id, exit_price, apply_fees=False, source=source,
+            )
+        else:
+            # Sync local state with ground truth
+            if abs(true_shares - pos.shares) > 0.01:
+                log.warning(
+                    "SELL %s: state had %.4f shares, CLOB has %.4f — using CLOB value",
+                    pos.team, pos.shares, true_shares,
+                )
+            pos.shares = true_shares
+            pos.amount_usdc = round(true_shares * pos.buy_price, 4)
+
+        log.info(
+            "SELL %s | exit=$%.4f (bought@$%.4f) | selling %.4f shares [%s]",
+            pos.team, exit_price, pos.buy_price, true_shares, source,
         )
 
-    async def _execute_stop_loss(self, pos: PositionRecord, exit_price: float) -> float | None:
-        shares = pos.shares if pos.shares > 0 else (pos.amount_usdc / pos.buy_price)
+        # Step 3: execute sell with exact balance
         try:
-            await polymarket.market_sell(pos.token_id, shares)
+            await polymarket.market_sell(pos.token_id, true_shares)
         except Exception as exc:
             err = str(exc).lower()
             if "not enough balance / allowance" in err:
+                # Market may have resolved between the balance fetch and the sell
                 resolved_pnl = await self._check_resolved_fallback(pos)
                 if resolved_pnl is not None:
                     return resolved_pnl
-                if pos.shares <= 0:
-                    fallback_shares = pos.amount_usdc
-                    log.warning(
-                        "STOP-LOSS retry with legacy shares fallback: %.2f",
-                        fallback_shares,
-                    )
-                    try:
-                        await polymarket.market_sell(pos.token_id, fallback_shares)
-                        pos.shares = fallback_shares
-                    except Exception:
-                        pass
-                    else:
-                        return self._risk.close_position_with_pnl(
-                            pos.token_id, exit_price, apply_fees=False, source="stop-loss",
-                        )
-                # Can't sell and not resolved yet — leave in state, retry next cycle
-                log.warning(
-                    "STOP-LOSS sell blocked: %s | market not resolved yet — will retry",
-                    pos.team,
-                )
+                log.warning("SELL %s: blocked after balance fetch — will retry next cycle", pos.team)
                 return None
-            log.error("STOP-LOSS SELL FAILED: %s: %s", pos.team, exc)
-            await send_alert(
-                f"Stop-Loss Sell Failed\n"
-                f"Market: {pos.team}\n"
-                f"Error: {exc}"
-            )
+            log.error("SELL FAILED %s [%s]: %s", pos.team, source, exc)
+            await send_alert(f"Sell Failed [{source}]\nMarket: {pos.team}\nError: {exc}")
             return None
-        return self._risk.close_position_with_pnl(pos.token_id, exit_price, apply_fees=False, source="stop-loss")
+
+        return self._risk.close_position_with_pnl(
+            pos.token_id, exit_price, apply_fees=False, source=source,
+        )
+
+    async def _execute_quick_exit(self, pos: PositionRecord, bid_price: float) -> float | None:
+        """Sell position at market when bid >= exit threshold. Capital recycled instantly."""
+        return await self._sell_position(pos, bid_price, source="quick-exit")
+
+    async def _execute_stop_loss(self, pos: PositionRecord, exit_price: float) -> float | None:
+        return await self._sell_position(pos, exit_price, source="stop-loss")
 
     async def _alert_position_closed(
         self, pos: PositionRecord, pnl: float, source: str,
