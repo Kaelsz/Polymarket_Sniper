@@ -367,10 +367,20 @@ class MarketScanner:
 
     @classmethod
     def _question_date_ok(cls, question: str, max_hours: float) -> bool:
-        """Return True if no date found in question OR date is within max_hours."""
+        """Return True if no date found in question OR date is within a generous window.
+
+        The API ``endDate`` filter already handles tight time-based filtering.
+        This method is only a safety net to reject markets whose *question text*
+        references a date many days in the future (e.g. "by March 15" when
+        today is March 2).  It uses a generous 48-hour minimum window so that
+        hourly / daily markets whose title date is tomorrow are never rejected.
+        """
         event_dt = cls._extract_event_date(question)
         if event_dt is None:
             return True
         now = datetime.now(timezone.utc)
         hours_until = (event_dt - now).total_seconds() / 3600
-        return hours_until <= max_hours
+        if hours_until <= 0:
+            return True
+        effective_max = max(max_hours, 48.0)
+        return hours_until <= effective_max
