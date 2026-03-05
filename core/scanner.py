@@ -239,17 +239,29 @@ class MarketScanner:
         now = datetime.now(timezone.utc)
         max_end_seconds = settings.trading.max_end_hours * 3600
 
+        # Debug counters — logged once per cycle at INFO level
+        dbg_volume = 0
+        dbg_no_enddate = 0
+        dbg_time_window = 0
+        dbg_no_prices = 0
+        dbg_question_date = 0
+        dbg_q_filter = 0
+        dbg_passed = 0
+
         for m in markets:
             volume = float(m.get("volume", 0) or 0)
             if volume < self._min_volume:
+                dbg_volume += 1
                 continue
 
             end_raw = m.get("endDate", "") or m.get("end_date_iso", "") or ""
             end_dt = self._parse_end_date(end_raw)
             if end_dt is None:
+                dbg_no_enddate += 1
                 continue
             time_left = (end_dt - now).total_seconds()
             if time_left <= 0 or time_left > max_end_seconds:
+                dbg_time_window += 1
                 continue
 
             prices_raw = m.get("outcomePrices", "")
@@ -257,6 +269,7 @@ class MarketScanner:
             outcomes_raw = m.get("outcomes", "")
 
             if not prices_raw or not tokens_raw:
+                dbg_no_prices += 1
                 continue
 
             try:
@@ -264,6 +277,7 @@ class MarketScanner:
                 token_ids = json.loads(tokens_raw) if isinstance(tokens_raw, str) else tokens_raw
                 outcomes = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else (outcomes_raw or ["Yes", "No"])
             except (json.JSONDecodeError, TypeError):
+                dbg_no_prices += 1
                 continue
 
             condition_id = m.get("conditionId", "")
@@ -272,12 +286,16 @@ class MarketScanner:
             end_date = m.get("endDate", "") or m.get("end_date_iso", "") or ""
 
             if not self._question_date_ok(question, max_end_seconds / 3600):
+                dbg_question_date += 1
+                log.debug("FILTER question_date_ok rejected: %s", question[:60])
                 continue
 
             q_filter = settings.trading.question_filter
             if q_filter and q_filter.lower() not in question.lower():
+                dbg_q_filter += 1
                 continue
 
+            dbg_passed += 1
             for price_s, tid, outcome in zip(prices, token_ids, outcomes):
                 try:
                     price = float(price_s)
@@ -305,6 +323,15 @@ class MarketScanner:
                         "end_date": end_date,
                         "slug": slug,
                     })
+
+        log.info(
+            "FILTER STATS: total=%d | -volume=%d | -no_enddate=%d | "
+            "-time_window=%d | -no_prices=%d | -question_date=%d | "
+            "-q_filter=%d | passed=%d | eligible_tokens=%d | candidates=%d",
+            len(markets), dbg_volume, dbg_no_enddate,
+            dbg_time_window, dbg_no_prices, dbg_question_date,
+            dbg_q_filter, dbg_passed, len(eligible), len(candidates),
+        )
 
         return candidates, eligible
 
