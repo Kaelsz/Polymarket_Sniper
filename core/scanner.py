@@ -248,6 +248,7 @@ class MarketScanner:
         dbg_no_prices = 0
         dbg_question_date = 0
         dbg_q_filter = 0
+        dbg_blacklist = 0
         dbg_passed = 0
 
         for m in markets:
@@ -305,6 +306,13 @@ class MarketScanner:
                 dbg_q_filter += 1
                 continue
 
+            blacklist = settings.trading.question_blacklist
+            if blacklist:
+                haystack = (question + " " + slug + " " + event_slug).lower()
+                if any(kw in haystack for kw in blacklist):
+                    dbg_blacklist += 1
+                    continue
+
             dbg_passed += 1
             for price_s, tid, outcome in zip(prices, token_ids, outcomes):
                 try:
@@ -338,10 +346,10 @@ class MarketScanner:
         log.info(
             "FILTER STATS: total=%d | -volume=%d | -no_enddate=%d | "
             "-time_window=%d | -no_prices=%d | -question_date=%d | "
-            "-q_filter=%d | passed=%d | eligible_tokens=%d | candidates=%d",
+            "-q_filter=%d | -blacklist=%d | passed=%d | eligible_tokens=%d | candidates=%d",
             len(markets), dbg_volume, dbg_no_enddate,
             dbg_time_window, dbg_no_prices, dbg_question_date,
-            dbg_q_filter, dbg_passed, len(eligible), len(candidates),
+            dbg_q_filter, dbg_blacklist, dbg_passed, len(eligible), len(candidates),
         )
 
         return candidates, eligible

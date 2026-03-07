@@ -137,6 +137,13 @@ class TradingConfig:
     question_filter: str = field(
         default_factory=lambda: os.getenv("QUESTION_FILTER", "")
     )
+    question_blacklist: list[str] = field(
+        default_factory=lambda: [
+            kw.strip().lower()
+            for kw in os.getenv("QUESTION_BLACKLIST", "").split(",")
+            if kw.strip()
+        ]
+    )
 
 
 @dataclass(frozen=True, slots=True)
