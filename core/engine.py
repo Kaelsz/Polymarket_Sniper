@@ -60,6 +60,8 @@ class SniperEngine:
         self._on_reject = on_reject
         self._claimer = claimer
         self._stale_counts: dict[str, int] = {}
+        # Tracks last time we checked each token's on-chain balance
+        self._last_balance_check: dict[str, float] = {}
 
     async def run(self) -> None:
         log.info("Sniper engine started — waiting for opportunities...")
@@ -262,6 +264,32 @@ class SniperEngine:
                         source = "API"
 
                 if pnl is None:
+                    # --- Manual-sell detection ---
+                    # Every 60s, verify the actual on-chain token balance.
+                    # If it's 0, the position was closed externally (manual sell,
+                    # Polymarket UI, etc.) and we silently clean up the state.
+                    now_ts = time.time()
+                    last_check = self._last_balance_check.get(pos.token_id, 0.0)
+                    if now_ts - last_check >= 60.0:
+                        self._last_balance_check[pos.token_id] = now_ts
+                        true_shares = await polymarket.get_token_balance(pos.token_id)
+                        if true_shares == 0.0:
+                            log.info(
+                                "AUTO-CLEAN  Position '%s' has 0 shares on CLOB "
+                                "— removed from state (manual sell detected)",
+                                pos.question[:60] if hasattr(pos, "question") else pos.team,
+                            )
+                            self._risk.close_position(pos.token_id)
+                            self._last_balance_check.pop(pos.token_id, None)
+                            changed = True
+                            await send_alert(
+                                f"Position Closed Externally\n"
+                                f"Market: {pos.team}\n"
+                                f"Bought@${pos.buy_price:.4f}\n"
+                                f"Source: manual-sell"
+                            )
+                            continue
+
                     try:
                         bid = await polymarket.best_bid(pos.token_id)
                     except Exception as exc:
