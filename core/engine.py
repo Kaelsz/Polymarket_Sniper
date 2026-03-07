@@ -165,6 +165,7 @@ class SniperEngine:
                 match_id=opp.condition_id,
                 amount_usdc=amount,
                 ask_price=ask,
+                event_slug=opp.event_slug,
             )
             if not decision:
                 log.warning("RISK VETO: %s", decision.reason)
@@ -195,6 +196,7 @@ class SniperEngine:
                 buy_price=ask,
                 shares=shares_to_buy,
                 condition_id=opp.condition_id,
+                event_slug=opp.event_slug,
             )
 
         self._save_state()

@@ -68,6 +68,7 @@ class PositionRecord:
     buy_price: float
     shares: float = 0.0
     condition_id: str = ""
+    event_slug: str = ""
     timestamp: float = field(default_factory=time.time)
 
 
@@ -125,6 +126,7 @@ class RiskManager:
         match_id: str,
         amount_usdc: float,
         ask_price: float,
+        event_slug: str = "",
     ) -> RiskDecision:
         """
         Run all pre-trade risk checks. Returns RiskClear or RiskVeto.
@@ -133,6 +135,9 @@ class RiskManager:
             return RiskVeto(f"Trading halted: {self._halt_reason}")
 
         if reason := self._check_dedup(token_id, match_id, team):
+            return RiskVeto(reason)
+
+        if reason := self._check_event_dedup(event_slug):
             return RiskVeto(reason)
 
         if reason := self._check_cooldown(match_id):
@@ -159,6 +164,7 @@ class RiskManager:
         buy_price: float,
         shares: float = 0.0,
         condition_id: str = "",
+        event_slug: str = "",
     ) -> None:
         """Record a successfully executed trade."""
         now = time.time()
@@ -171,6 +177,7 @@ class RiskManager:
             buy_price=buy_price,
             shares=shares,
             condition_id=condition_id,
+            event_slug=event_slug,
             timestamp=now,
         ))
 
@@ -271,6 +278,18 @@ class RiskManager:
         self._halt_reason = reason
         log.critical("RISK  TRADING HALTED: %s", reason)
 
+    def _check_event_dedup(self, event_slug: str) -> str:
+        """Block if we already hold ANY position tied to the same parent event."""
+        if not event_slug:
+            return ""
+        for p in self._positions:
+            if p.event_slug and p.event_slug == event_slug:
+                return (
+                    f"Already holding position in event '{event_slug}' "
+                    f"(market: {p.condition_id[:16]})"
+                )
+        return ""
+
     def _check_dedup(self, token_id: str, match_id: str, team: str) -> str:
         if any(p.token_id == token_id for p in self._positions):
             return f"Already holding position on token {token_id[:16]}"
@@ -334,6 +353,7 @@ class RiskManager:
                     "buy_price": p.buy_price,
                     "shares": p.shares,
                     "condition_id": p.condition_id,
+                    "event_slug": p.event_slug,
                     "timestamp": p.timestamp,
                 }
                 for p in self._positions

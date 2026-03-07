@@ -43,6 +43,7 @@ class Opportunity:
     volume: float
     end_date: str = ""
     market_slug: str = ""
+    event_slug: str = ""
 
 
 class MarketScanner:
@@ -160,6 +161,7 @@ class MarketScanner:
                 volume=cand["volume"],
                 end_date=cand.get("end_date", ""),
                 market_slug=cand.get("slug", ""),
+                event_slug=cand.get("event_slug", ""),
             )
             self._seen[token_id] = time.monotonic()
             self._total_opportunities += 1
@@ -285,6 +287,14 @@ class MarketScanner:
             slug = m.get("slug", "")
             end_date = m.get("endDate", "") or m.get("end_date_iso", "") or ""
 
+            # event_slug: use parent event slug if available, fallback to market slug
+            event_slug = ""
+            events = m.get("events") or []
+            if events and isinstance(events, list) and isinstance(events[0], dict):
+                event_slug = events[0].get("slug", "")
+            if not event_slug:
+                event_slug = slug
+
             if not self._question_date_ok(question, max_end_seconds / 3600):
                 dbg_question_date += 1
                 log.debug("FILTER question_date_ok rejected: %s", question[:60])
@@ -322,6 +332,7 @@ class MarketScanner:
                         "price": price,
                         "end_date": end_date,
                         "slug": slug,
+                        "event_slug": event_slug,
                     })
 
         log.info(
