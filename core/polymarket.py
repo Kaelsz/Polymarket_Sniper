@@ -207,9 +207,10 @@ class PolymarketClient:
         Fetch the exact number of shares held for a specific conditional token.
         This is the ground truth from the CLOB — ignores local state entirely.
         Returns shares as a float (6-decimal precision).
+        Returns -1.0 on any error or when API is not ready (sentinel = do not act).
         """
         if not self._api_ready:
-            return 0.0
+            return -1.0  # API not ready — never treat as "0 shares"
         try:
             await self._throttle()
             loop = asyncio.get_running_loop()

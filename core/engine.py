@@ -62,6 +62,8 @@ class SniperEngine:
         self._stale_counts: dict[str, int] = {}
         # Tracks last time we checked each token's on-chain balance
         self._last_balance_check: dict[str, float] = {}
+        # Counts consecutive 0-balance confirmations before auto-clean
+        self._zero_balance_confirmations: dict[str, int] = {}
 
     async def run(self) -> None:
         log.info("Sniper engine started — waiting for opportunities...")
@@ -267,30 +269,46 @@ class SniperEngine:
 
                 if pnl is None:
                     # --- Manual-sell detection ---
-                    # Every 60s, verify the actual on-chain token balance.
-                    # If it's 0, the position was closed externally (manual sell,
-                    # Polymarket UI, etc.) and we silently clean up the state.
+                    # Every 60s, check the real CLOB token balance.
+                    # Requires 2 consecutive zero-balance confirmations to avoid
+                    # false positives from transient API errors or network glitches.
                     now_ts = time.time()
                     last_check = self._last_balance_check.get(pos.token_id, 0.0)
                     if now_ts - last_check >= 60.0:
                         self._last_balance_check[pos.token_id] = now_ts
                         true_shares = await polymarket.get_token_balance(pos.token_id)
-                        if true_shares == 0.0:
-                            log.info(
-                                "AUTO-CLEAN  Position '%s' has 0 shares on CLOB "
-                                "— removed from state (manual sell detected)",
-                                pos.question[:60] if hasattr(pos, "question") else pos.team,
+
+                        if true_shares > 0.0:
+                            # Shares confirmed — reset any pending confirmation counter
+                            self._zero_balance_confirmations.pop(pos.token_id, None)
+                        elif true_shares == 0.0:
+                            # First zero reading: increment confirmation counter
+                            confirmations = self._zero_balance_confirmations.get(pos.token_id, 0) + 1
+                            self._zero_balance_confirmations[pos.token_id] = confirmations
+                            log.debug(
+                                "AUTO-CLEAN  %s: zero balance confirmation %d/2",
+                                pos.team, confirmations,
                             )
-                            self._risk.close_position(pos.token_id)
-                            self._last_balance_check.pop(pos.token_id, None)
-                            changed = True
-                            await send_alert(
-                                f"Position Closed Externally\n"
-                                f"Market: {pos.team}\n"
-                                f"Bought@${pos.buy_price:.4f}\n"
-                                f"Source: manual-sell"
-                            )
-                            continue
+                            if confirmations >= 2:
+                                # Two consecutive zeros — safe to clean
+                                label = pos.question[:60] if pos.question else pos.team
+                                log.info(
+                                    "AUTO-CLEAN  Position '%s' confirmed 0 shares "
+                                    "— removed from state (manual sell detected)",
+                                    label,
+                                )
+                                self._risk.close_position(pos.token_id)
+                                self._last_balance_check.pop(pos.token_id, None)
+                                self._zero_balance_confirmations.pop(pos.token_id, None)
+                                changed = True
+                                await send_alert(
+                                    f"Position Closed Externally\n"
+                                    f"Market: {pos.team}\n"
+                                    f"Bought@${pos.buy_price:.4f}\n"
+                                    f"Source: manual-sell"
+                                )
+                                continue
+                        # true_shares == -1.0 → fetch failed, do nothing
 
                     try:
                         bid = await polymarket.best_bid(pos.token_id)
