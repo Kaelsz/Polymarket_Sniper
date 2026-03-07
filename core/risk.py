@@ -12,6 +12,7 @@ Protections:
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -69,6 +70,7 @@ class PositionRecord:
     shares: float = 0.0
     condition_id: str = ""
     event_slug: str = ""
+    question: str = ""
     timestamp: float = field(default_factory=time.time)
 
 
@@ -127,6 +129,7 @@ class RiskManager:
         amount_usdc: float,
         ask_price: float,
         event_slug: str = "",
+        question: str = "",
     ) -> RiskDecision:
         """
         Run all pre-trade risk checks. Returns RiskClear or RiskVeto.
@@ -137,7 +140,7 @@ class RiskManager:
         if reason := self._check_dedup(token_id, match_id, team):
             return RiskVeto(reason)
 
-        if reason := self._check_event_dedup(event_slug):
+        if reason := self._check_event_dedup(event_slug, question):
             return RiskVeto(reason)
 
         if reason := self._check_cooldown(match_id):
@@ -165,6 +168,7 @@ class RiskManager:
         shares: float = 0.0,
         condition_id: str = "",
         event_slug: str = "",
+        question: str = "",
     ) -> None:
         """Record a successfully executed trade."""
         now = time.time()
@@ -178,6 +182,7 @@ class RiskManager:
             shares=shares,
             condition_id=condition_id,
             event_slug=event_slug,
+            question=question,
             timestamp=now,
         ))
 
@@ -278,16 +283,64 @@ class RiskManager:
         self._halt_reason = reason
         log.critical("RISK  TRADING HALTED: %s", reason)
 
-    def _check_event_dedup(self, event_slug: str) -> str:
-        """Block if we already hold ANY position tied to the same parent event."""
-        if not event_slug:
+    def _check_event_dedup(self, event_slug: str, question: str = "") -> str:
+        """Block if we already hold a position correlated to the same real-world event.
+
+        Two levels of detection:
+        1. Exact event_slug match — same parent event in the Polymarket API.
+        2. Slug-prefix match — e.g. 'epl-bri-ars-2026-03-07-winner' and
+           'epl-bri-ars-2026-03-07-spread' share the prefix 'epl-bri-ars-2026-03-07'.
+           We compare the first 4 dash-separated segments of each slug.
+        3. Keyword overlap in question — as a fallback, if both questions share
+           3+ significant words (len >= 4) they likely refer to the same match.
+        """
+        if not self._positions:
             return ""
-        for p in self._positions:
-            if p.event_slug and p.event_slug == event_slug:
-                return (
-                    f"Already holding position in event '{event_slug}' "
-                    f"(market: {p.condition_id[:16]})"
-                )
+
+        # Level 1: exact event_slug
+        if event_slug:
+            for p in self._positions:
+                if p.event_slug and p.event_slug == event_slug:
+                    return (
+                        f"Correlated event (same slug '{event_slug[:40]}')"
+                    )
+
+        # Level 2: slug prefix (first 4 dash-segments cover date + teams)
+        if event_slug:
+            new_prefix = "-".join(event_slug.split("-")[:4])
+            if new_prefix:
+                for p in self._positions:
+                    if p.event_slug:
+                        existing_prefix = "-".join(p.event_slug.split("-")[:4])
+                        if existing_prefix and existing_prefix == new_prefix:
+                            return (
+                                f"Correlated event (slug prefix '{new_prefix}' "
+                                f"matches existing '{p.event_slug[:40]}')"
+                            )
+
+        # Level 3: keyword overlap in question text
+        if question:
+            _STOP = {"will", "the", "on", "in", "by", "a", "an", "be", "to",
+                     "of", "or", "and", "is", "for", "win", "at", "vs", "fc",
+                     "2026", "2025", "2024", "yes", "no"}
+            new_words = {
+                w for w in re.sub(r"[^a-z0-9 ]", " ", question.lower()).split()
+                if len(w) >= 4 and w not in _STOP
+            }
+            if new_words:
+                for p in self._positions:
+                    if not p.question:
+                        continue
+                    existing_words = {
+                        w for w in re.sub(r"[^a-z0-9 ]", " ", p.question.lower()).split()
+                        if len(w) >= 4 and w not in _STOP
+                    }
+                    overlap = new_words & existing_words
+                    if len(overlap) >= 3:
+                        return (
+                            f"Correlated event (question overlap: {sorted(overlap)[:4]})"
+                        )
+
         return ""
 
     def _check_dedup(self, token_id: str, match_id: str, team: str) -> str:
@@ -354,6 +407,7 @@ class RiskManager:
                     "shares": p.shares,
                     "condition_id": p.condition_id,
                     "event_slug": p.event_slug,
+                    "question": p.question,
                     "timestamp": p.timestamp,
                 }
                 for p in self._positions
