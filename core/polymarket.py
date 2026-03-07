@@ -4,11 +4,14 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds, AssetType, BalanceAllowanceParams, OrderArgs, OrderType
 
 from core.config import settings
 from core.rate_limiter import RateLimiter
+
+_DATA_API = "https://data-api.polymarket.com"
 
 log = logging.getLogger("polysniper.polymarket")
 
@@ -228,6 +231,48 @@ class PolymarketClient:
         except Exception as exc:
             log.warning("Failed to fetch token balance for %s: %s", token_id[:16], exc)
             return -1.0  # sentinel: distinguish "0 shares" from "fetch failed"
+
+    async def get_live_positions(self) -> list[dict]:
+        """
+        Fetch all open positions directly from Polymarket's public data API.
+        Returns a list of position dicts with keys:
+          title, slug, eventSlug, outcome, size, avgPrice, curPrice,
+          cashPnl, percentPnl, redeemable, conditionId, asset, endDate
+        Returns [] on any error.
+        """
+        address = settings.poly.funder or settings.poly.address
+        if not address:
+            return []
+        url = f"{_DATA_API}/positions"
+        params = {"user": address, "sizeThreshold": "0.01", "limit": "100"}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                if not isinstance(data, list):
+                    return []
+                return [
+                    {
+                        "title": p.get("title", ""),
+                        "slug": p.get("slug", ""),
+                        "event_slug": p.get("eventSlug", ""),
+                        "outcome": p.get("outcome", ""),
+                        "size": p.get("size", 0),
+                        "avg_price": p.get("avgPrice", 0),
+                        "cur_price": p.get("curPrice", 0),
+                        "cash_pnl": p.get("cashPnl", 0),
+                        "percent_pnl": p.get("percentPnl", 0),
+                        "redeemable": p.get("redeemable", False),
+                        "condition_id": p.get("conditionId", ""),
+                        "asset": p.get("asset", ""),
+                        "end_date": p.get("endDate", ""),
+                    }
+                    for p in data
+                ]
+        except Exception as exc:
+            log.warning("Failed to fetch live positions: %s", exc)
+            return []
 
     async def cancel_orders_for_token(self, token_id: str) -> int:
         """

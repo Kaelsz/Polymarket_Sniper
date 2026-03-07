@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from core.polymarket import polymarket
+
 if TYPE_CHECKING:
     from core.circuit_breaker import CircuitBreaker
     from core.engine import SniperEngine
@@ -138,6 +140,11 @@ async def _handle_trades(request: web.Request) -> web.Response:
     return web.json_response(safe_trades)
 
 
+async def _handle_live_positions(request: web.Request) -> web.Response:
+    positions = await polymarket.get_live_positions()
+    return web.json_response(positions)
+
+
 _HTML_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -244,10 +251,10 @@ _HTML_TEMPLATE = """\
 </div>
 
 <div class="section">
-  <h2>Open Positions</h2>
+  <h2>Live Positions <span style="font-size:0.7rem;color:var(--muted);font-weight:400">— via Polymarket wallet</span></h2>
   <table>
-    <thead><tr><th>Market</th><th>Outcome</th><th>Size</th><th>Buy Price</th><th>Age</th></tr></thead>
-    <tbody id="positions-body"><tr><td colspan="5" class="empty">No open positions</td></tr></tbody>
+    <thead><tr><th>Market</th><th>Outcome</th><th>Size</th><th>Avg Price</th><th>Cur Price</th><th>PnL</th><th>Status</th></tr></thead>
+    <tbody id="live-positions-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
   </table>
 </div>
 
@@ -285,11 +292,14 @@ function age(ts) {
 
 async function refresh() {
   try {
-    const [statusRes, tradesRes] = await Promise.all([
-      fetch('/api/status'), fetch('/api/trades?limit=20')
+    const [statusRes, tradesRes, liveRes] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/trades?limit=20'),
+      fetch('/api/live-positions'),
     ]);
     const st = await statusRes.json();
     const tr = await tradesRes.json();
+    const live = await liveRes.json();
 
     document.getElementById('uptime').textContent = st.uptime;
     const rp = document.getElementById('realized-pnl');
@@ -328,16 +338,32 @@ async function refresh() {
       ).join('');
     }
 
-    // Positions
-    const pb = document.getElementById('positions-body');
-    if (st.positions.length === 0) {
-      pb.innerHTML = '<tr><td colspan="5" class="empty">No open positions</td></tr>';
+    // Live positions from Polymarket wallet
+    const lb = document.getElementById('live-positions-body');
+    if (!live || live.length === 0) {
+      lb.innerHTML = '<tr><td colspan="7" class="empty">No open positions in wallet</td></tr>';
     } else {
-      pb.innerHTML = st.positions.map(p =>
-        `<tr><td>${p.game}</td><td>${p.team}</td>` +
-        `<td>$${p.amount_usdc.toFixed(2)}</td><td>$${p.buy_price.toFixed(3)}</td>` +
-        `<td>${age(p.timestamp)}</td></tr>`
-      ).join('');
+      lb.innerHTML = live.map(p => {
+        const pnlClass = p.cash_pnl > 0 ? 'positive' : p.cash_pnl < 0 ? 'negative' : 'neutral';
+        const pnlSign = p.cash_pnl >= 0 ? '+' : '';
+        const redeemBadge = p.redeemable
+          ? '<span class="badge badge-ok">REDEEM</span>'
+          : '<span class="badge badge-warn">OPEN</span>';
+        const link = p.event_slug
+          ? `<a href="https://polymarket.com/event/${p.event_slug}" target="_blank"
+               style="color:var(--accent);text-decoration:none;" title="${p.title}"
+             >${p.title.length > 45 ? p.title.slice(0,45)+'…' : p.title}</a>`
+          : (p.title || '?');
+        return `<tr>
+          <td>${link}</td>
+          <td>${p.outcome}</td>
+          <td>${p.size.toFixed(2)}</td>
+          <td>$${p.avg_price.toFixed(4)}</td>
+          <td>$${p.cur_price.toFixed(4)}</td>
+          <td class="${pnlClass}">${pnlSign}$${p.cash_pnl.toFixed(3)}</td>
+          <td>${redeemBadge}</td>
+        </tr>`;
+      }).join('');
     }
 
     // Closed positions
@@ -405,6 +431,7 @@ def create_dashboard_app(
     app.router.add_get("/", _handle_index)
     app.router.add_get("/api/status", _handle_status)
     app.router.add_get("/api/trades", _handle_trades)
+    app.router.add_get("/api/live-positions", _handle_live_positions)
 
     return app
 
